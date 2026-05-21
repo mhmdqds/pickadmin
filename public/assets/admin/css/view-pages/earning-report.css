@@ -1,0 +1,107 @@
+#pre--loader,
+.pre--loader {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+.report-chart-frame {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+}
+
+.report-chart-y-axis {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    color: #4b5563;
+    font-size: 12px;
+    font-weight: 600;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.report-chart-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.report-chart-x-axis {
+    margin-top: 10px;
+    text-align: center;
+    color: #4b5563;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#earning-trend-chart,
+#monthly-earning-expense-graph {
+    overflow: visible;
+}
+
+.report-scroll-list {
+    flex: 1;
+    min-height: 360px;
+    max-height: 360px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.report-equal-height-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 440px;
+}
+
+.recent-transactions-card {
+    position: relative;
+    isolation: isolate;
+    overflow: visible;
+    z-index: 1;
+}
+
+.recent-transactions-card .recent-transaction-header {
+    position: relative;
+    z-index: 3;
+}
+
+.recent-transactions-card .search--button-wrapper {
+    position: relative;
+    z-index: 4;
+}
+
+.recent-transactions-card .hs-unfold {
+    position: relative;
+    z-index: 6;
+}
+
+.recent-transactions-card .hs-unfold-content.dropdown-unfold {
+    z-index: 7 !important;
+}
+
+.recent-transactions-card .tab-content,
+.recent-transactions-card .datatable-custom,
+.recent-transactions-card .table-responsive {
+    position: relative;
+    z-index: 1;
+}
+
+.recent-transactions-card .sticky-header-cloned-wrapper {
+    z-index: 1;
+}
+
+.recent-transactions-card .page-area {
+    position: sticky;
+    bottom: -10px;
+    z-index: 2;
+    margin: 0;
+    padding-top: 1rem;
+    background: #fff;
+    border-top: 1px solid rgba(231, 234, 243, 0.9);
+    box-shadow: 0 -8px 16px rgba(19, 33, 68, 0.04);
+}

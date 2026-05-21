@@ -1,0 +1,13 @@
+{
+    "name": "ReelsModule",
+    "alias": "reelsmodule",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\ReelsModule\\Providers\\ReelsServiceProvider"
+    ],
+    "aliases": {},
+    "files": [],
+    "requires": []
+}
