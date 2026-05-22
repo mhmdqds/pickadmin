@@ -11674,4 +11674,8 @@ Smartly or Earn. ',
   'to_get_your_snapchat_pixel_id,_log_in_to_your_snapchat_ads_manager.' => 'To get your snapchat pixel id, log in to your snapchat ads manager.',
   'click_on_business_in_the_top_bar_and_select_business_details_from_the_dropdown_menu.' => 'Click on business in the top bar and select business details from the dropdown menu.',
   'Manage and configure how vendors & deliverymen receive their payouts' => 'Manage and configure how vendors & deliverymen receive their payouts',
+  'Pickles Pies' => 'Pickles Pies',
+  'Pickles and pies' => 'Pickles and pies',
+  'Please_select_a_location_within_the_selected_zone.' => 'Please select a location within the selected zone.',
+  'The cover image must not be greater than 2048 kilobytes.' => 'The cover image must not be greater than 2048 kilobytes.',
 );
