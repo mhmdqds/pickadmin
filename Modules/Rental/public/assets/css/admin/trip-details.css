@@ -1,0 +1,29 @@
+
+#map {
+    height: 500px;
+    width: 100%;
+}
+
+#search-input {
+    position: absolute;
+    top: 33px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 5;
+    width: 40%;
+    padding: 10px;
+    font-size: 16px;
+}
+.provider_div_float{
+    float:left;
+}
+.provider_logo{
+    max-height:40px;
+    width:auto;
+}
+.provider_name_div{
+    float:right;
+    padding: 10px;
+}
+
+

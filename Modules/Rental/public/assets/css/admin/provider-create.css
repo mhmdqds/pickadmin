@@ -1,0 +1,41 @@
+#pac-input1 {
+    position: absolute;
+    height: 40px;
+    border: 1px solid #ddd;
+    outline: none;
+    box-shadow: none;
+    top: 10px !important;
+    left: 78% !important;
+    transform: translateX(-50%);
+    z-index: 5;
+    width: 25%;
+    padding: 10px;
+    font-size: 16px;
+}
+
+.password-feedback {
+    display: none;
+    width: 100%;
+    margin-top: .25rem;
+    font-size: .875em;
+    /* color: #35dc80; */
+}
+
+.invalid-feedback {
+    display: none;
+    width: 100%;
+    margin-top: .25rem;
+    font-size: .875em;
+    /* color: #35dc80; */
+}
+
+.valid {
+    color: green;
+}
+
+.invalid {
+    color: red;
+}
+.display-none{
+    display: none;
+}

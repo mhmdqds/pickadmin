@@ -1,0 +1,17 @@
+.display-none{
+    display: none;
+}
+.description-text {
+    position: relative;
+    overflow: hidden;
+}
+
+.full-description {
+    display: none;
+}
+
+.see-more {
+    color: #1a73e8;
+    cursor: pointer;
+    text-decoration: underline;
+}
