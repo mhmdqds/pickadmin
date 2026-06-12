@@ -6366,11 +6366,11 @@ strong {
     max-width: 366px;
     margin: 0 auto;
     padding: 25px 18px;
-    font-weight: 400;
+    font-weight: 600;
 }
 
 .print--invoice * {
-    font-weight: 400;
+    font-weight: 800;
 }
 
 .print--invoice strong {
@@ -6434,7 +6434,7 @@ strong {
 
 .order-info-id {
     font-weight: 500;
-    font-size: 10px;
+    font-size: 14px;
     line-height: 14px;
     color: #000000;
 }
@@ -6486,7 +6486,8 @@ strong {
 
 .invoice--table tr td {
     border-top: none;
-    font-size: 10px;
+    font-size: 12px;
+    font-weight: 800;
     line-height: 16px;
     color: #000000;
     padding: 0.6rem 0.75rem;
@@ -6513,7 +6514,8 @@ strong {
 
 .checkout--info {
     font-weight: 500;
-    font-size: 12px;
+    font-size: 14px;
+    font-weight: 800;
     line-height: 16px;
     text-align: end;
     color: #000000;
@@ -6529,22 +6531,23 @@ strong {
 
 .checkout--info dt {
     text-align: start;
-    font-size: 10px;
+    font-size: 13px;
+    font-weight: 800;
     line-height: 18px;
     color: #000000;
     margin-bottom: 7px;
 }
 
 .checkout--info dd {
-    font-size: 10px;
+    font-size: 12px;
     line-height: 18px;
-    font-weight: 500;
+    font-weight: 600;
     margin-bottom: 7px;
 }
 
 .checkout--info .total {
-    font-weight: 700;
-    font-size: 12px;
+    font-weight: 800;
+    font-size: 13px;
     line-height: 18px;
     color: #000000;
 }

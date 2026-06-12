@@ -1,14 +1,14 @@
 <?php return array (
-  'admin_panel' =>
+  'admin_panel' => 
   array (
-    'active' => '0',
-    'username' => '1',
-    'purchase_key' => '1',
+    'active' => '1',
+    'username' => 'Chaithanyakrishna91',
+    'purchase_key' => 'e434e4e5-a729-481f-aafd-983ce5df86c5',
     'software_id' => 'MzY3NzIxMTI=',
-    'domain' => '',
+    'domain' => 'pickles-pies.com',
     'software_type' => 'product',
   ),
-  'vendor_panel' =>
+  'vendor_panel' => 
   array (
     'active' => '0',
     'username' => '',
@@ -17,7 +17,7 @@
     'domain' => '',
     'software_type' => 'addon',
   ),
-  'user_app' =>
+  'user_app' => 
   array (
     'active' => '0',
     'username' => '',
@@ -26,31 +26,31 @@
     'domain' => '',
     'software_type' => 'addon',
   ),
-  'vendor_app' =>
+  'vendor_app' => 
   array (
-    'active' => '1',
-    'username' => '',
-    'purchase_key' => '',
+    'active' => 1,
+    'username' => 'Chaithanyakrishna91',
+    'purchase_key' => 'e434e4e5-a729-481f-aafd-983ce5df86c5',
     'software_id' => 'MzY3NzIxNzM=',
-    'domain' => '',
+    'domain' => 'pickles-pies.com',
     'software_type' => 'addon',
   ),
-  'deliveryman_app' =>
+  'deliveryman_app' => 
   array (
-    'active' => '1',
-    'username' => '',
-    'purchase_key' => '',
+    'active' => 1,
+    'username' => 'Chaithanyakrishna91',
+    'purchase_key' => 'e434e4e5-a729-481f-aafd-983ce5df86c5',
     'software_id' => 'MzY3NzIxNDg=',
-    'domain' => '',
+    'domain' => 'pickles-pies.com',
     'software_type' => 'addon',
   ),
-  'react_web' =>
+  'react_web' => 
   array (
     'active' => '1',
-    'username' => '',
-    'purchase_key' => '',
+    'username' => 'Chaithanyakrishna91',
+    'purchase_key' => 'e434e4e5-a729-481f-aafd-983ce5df86c5',
     'software_id' => 'NDUzNzAzNTE=',
-    'domain' => '',
+    'domain' => 'pickles-pies.com',
     'software_type' => 'addon',
   ),
 );
