@@ -1,0 +1,170 @@
+================================================================================
+SMARTWEBYE - CHECKLIST BEFORE DEPLOYMENT
+PickAdmin Laravel Security Remediation - Deployment Readiness
+================================================================================
+
+PROJECT: PickAdmin (6amTech StackFood Multi-Restaurant)
+DATE: 2026-06-18
+STATUS: READY FOR STAGING (Pending Final Syntax Checks)
+
+================================================================================
+MODIFIED FILES (6 files):
+================================================================================
+
+[1] app/Http/Controllers/PaymentController.php
+    - REMOVED: eval() backdoor (2 methods)
+    - ADDED: use Payment; trait import
+    - STATUS: Syntax OK ✓
+
+[2] app/Http/Controllers/Admin/System/AddonController.php
+    - REMOVED: eval() backdoor (3 methods)
+    - SECURED: upload() - ZIP content scanning
+    - SECURED: delete_theme() - Path traversal validation
+    - STATUS: Syntax OK ✓
+
+[3] app/Http/Controllers/Admin/BusinessSettingsController.php
+    - SECURED: exec() with escapeshellarg()
+    - ADDED: file_exists() check before exec
+    - STATUS: Syntax OK ✓
+
+[4] app/Traits/PlaceNewOrder.php
+    - FIXED: SQL Injection in getZoneAndStore()
+    - CHANGED: String concatenation → Prepared Statements
+    - STATUS: Syntax OK ✓
+
+[5] app/Http/Controllers/Admin/LanguageController.php
+    - SECURED: delete() - Path traversal validation
+    - ADDED: Regex validation for $lang parameter
+    - ADDED: realpath() boundary checking
+    - STATUS: Needs Syntax Check
+
+[6] app/Http/Controllers/Admin/FileManagerController.php
+    - SECURED: destroy() - base64 path validation
+    - ADDED: '..' traversal check
+    - STATUS: Needs Syntax Check
+
+================================================================================
+SECURITY FIXES APPLIED:
+================================================================================
+
+CRITICAL (Fixed):
+□ [CRIT-001] eval() Backdoors Removed - 2 instances
+□ [CRIT-002] Command Injection Secured - 1 instance  
+□ [CRIT-003] Arbitrary ZIP Upload Secured - 1 instance
+
+HIGH (Fixed):
+□ [HIGH-001] SQL Injection Fixed - 1 instance
+□ [HIGH-002] Path Traversal in LanguageController - 1 instance
+□ [HIGH-003] Path Traversal in FileManagerController - 1 instance
+□ [HIGH-004] Path Traversal in AddonController - 1 instance
+
+MEDIUM (Pending Manual Review):
+□ [MED-001] AwgCloud Module encoded code
+□ [MED-002] Addon activation external HTTP calls
+
+================================================================================
+PRE-DEPLOYMENT CHECKLIST:
+================================================================================
+
+BEFORE DEPLOYING TO PRODUCTION, VERIFY:
+
+□ 1. Run PHP Syntax Check on ALL modified files
+    Commands:
+    php -l app/Http/Controllers/PaymentController.php
+    php -l app/Http/Controllers/Admin/System/AddonController.php
+    php -l app/Http/Controllers/Admin/BusinessSettingsController.php
+    php -l app/Traits/PlaceNewOrder.php
+    php -l app/Http/Controllers/Admin/LanguageController.php
+    php -l app/Http/Controllers/Admin/FileManagerController.php
+
+□ 2. Run PHPUnit Tests (if available)
+    Command: php artisan test
+
+□ 3. Clear all caches
+    Commands:
+    php artisan cache:clear
+    php artisan config:clear
+    php artisan view:clear
+    php artisan route:clear
+
+□ 4. Verify no new eval() / exec() / shell_exec() introduced
+    Command: grep -r "eval(" app/ --include="*.php"
+    Command: grep -r "exec(" app/ --include="*.php"
+    Command: grep -r "shell_exec(" app/ --include="*.php"
+
+□ 5. Test critical flows manually:
+    - Payment processing
+    - Addon upload/delete
+    - Language CRUD operations
+    - File manager upload/delete
+    - Order placement
+
+□ 6. Review server logs for errors
+    - storage/logs/laravel.log
+    - Apache/Nginx error logs
+
+□ 7. Backup current code before deployment
+    Command: git add -A && git commit -m "Security fixes - SMARTWEBYE"
+
+□ 8. Deploy to staging first
+    - Test all admin panel functions
+    - Test vendor/store panel
+    - Test customer-facing features
+
+□ 9. Monitor for 24-48 hours after production deploy
+    - Watch for PHP errors
+    - Monitor unusual network activity
+    - Check file integrity
+
+================================================================================
+KNOWN LIMITATIONS / PENDING REVIEW:
+================================================================================
+
+1. AWGCLOUD MODULE
+   Location: Modules/AwgCloud/
+   Issue: Encoded license validation code
+   Action Needed: Manual review by senior developer
+   Risk Level: MEDIUM
+
+2. BASE64 DECODE USAGE
+   Location: AddonController::activation()
+   Issue: External license validation to 6amtech.com
+   Action Needed: Verify domain and endpoints
+   Risk Level: LOW (Normal for commercial products)
+
+3. FILE UPLOAD LOCATIONS
+   Action Needed: Audit ALL file upload endpoints
+   Recommendation: Implement centralized upload validator
+
+================================================================================
+ROLLBACK PLAN:
+================================================================================
+
+If issues occur after deployment:
+
+1. IMMEDIATE (0-5 minutes):
+   - Restore from git backup
+   - Command: git checkout HEAD~1 -- app/
+
+2. SHORT-TERM (5-30 minutes):
+   - Switch to maintenance mode
+   - Command: php artisan down
+   - Review error logs
+   - Fix specific issue
+
+3. LONG-TERM (30+ minutes):
+   - Full rollback to previous release
+   - Restore database if needed
+   - Command: php artisan up (when ready)
+
+================================================================================
+CONTACT:
+================================================================================
+
+SMARTWEBYE Security Team
+Report Date: 2026-06-18
+Version: 1.0-FINAL
+
+================================================================================
+END OF CHECKLIST
+================================================================================

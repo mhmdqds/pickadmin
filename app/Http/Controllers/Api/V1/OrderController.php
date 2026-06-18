@@ -752,7 +752,15 @@ class OrderController extends Controller
             return response()->json(['errors' => Helpers::error_processor($validator)], 403);
         }
 
-        $order = Order::where(['id' => $request->order_id])->with('parcelCancellation')->first();
+        $user_id = auth()->id();
+        $order = Order::where(['id' => $request->order_id, 'user_id' => $user_id])->with('parcelCancellation')->first();
+        if (!$order) {
+            return response()->json([
+                'errors' => [
+                    ['code' => 'order', 'message' => translate('messages.not_found')]
+                ]
+            ], 404);
+        }
 
 
         $validationCheck =  OrderLogic::makeValidationForParcelReturn($request,$order);
@@ -783,7 +791,15 @@ class OrderController extends Controller
             return response()->json(['errors' => Helpers::error_processor($validator)], 403);
         }
 
-        $order = Order::where(['id' => $request->order_id])->first();
+        $user_id = auth()->id();
+        $order = Order::where(['id' => $request->order_id, 'user_id' => $user_id])->first();
+        if (!$order) {
+            return response()->json([
+                'errors' => [
+                    ['code' => 'order', 'message' => translate('messages.not_found')]
+                ]
+            ], 404);
+        }
         if($order->payment_status == 'paid'){
             return response()->json(['message' => translate('messages.Order_payment_successfully')], 200);
         }

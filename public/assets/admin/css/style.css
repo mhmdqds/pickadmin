@@ -6370,15 +6370,15 @@ strong {
 }
 
 .print--invoice * {
-    font-weight: 800;
+    font-weight: 600;
 }
 
 .print--invoice strong {
-    font-weight: 500;
+    font-weight: 600;
 }
 
 .print--invoice h5 {
-    font-weight: 500;
+    font-weight: 600;
     font-size: 14px;
     line-height: 18px;
     color: #000000;
@@ -6405,7 +6405,7 @@ strong {
 }
 
 .print--invoice .top-info > div {
-    font-weight: 500;
+    font-weight: 600;
     text-align: center;
     color: #000000;
     font-size: 10px;
@@ -6424,6 +6424,15 @@ strong {
 } */
 
 .print--invoice .top-info .text-uppercase {
+    letter-spacing: 1.04px;
+    font-weight: 700;
+    padding-top: 8px;
+    padding-bottom: 6px;
+    font-size: 14px;
+    line-height: 18px;
+}
+
+.print--invoice .receipt-divider {
     letter-spacing: 1.04px;
     font-weight: 700;
     padding-top: 8px;
@@ -6486,7 +6495,7 @@ strong {
 
 .invoice--table tr td {
     border-top: none;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 800;
     line-height: 16px;
     color: #000000;
@@ -6531,7 +6540,7 @@ strong {
 
 .checkout--info dt {
     text-align: start;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 800;
     line-height: 18px;
     color: #000000;
@@ -6605,6 +6614,75 @@ strong {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
     }
+        /* تحسين وضوح الخطوط للطابعات الحرارية */
+    .print--invoice,
+    .print--invoice * {
+        font-family: 'Courier New', Courier, monospace !important;
+        font-weight: 700 !important;
+        color: #000000 !important;
+    }
+    
+    .print--invoice h2.store-name {
+        font-size: 18px !important;
+        font-weight: 900 !important;
+    }
+    
+    .print--invoice h5 {
+        font-size: 14px !important;
+        font-weight: 700 !important;
+    }
+    
+    .print--invoice .invoice--table th,
+    .print--invoice .invoice--table td {
+        font-size: 13px !important;
+        padding: 4px 2px !important;
+    }
+    
+    .print--invoice .checkout--info dt,
+    .print--invoice .checkout--info dd {
+        font-size: 13px !important;
+        font-weight: 700 !important;
+    }
+    
+    .print--invoice .checkout--info dt.total,
+    .print--invoice .checkout--info dd.total {
+        font-size: 15px !important;
+        font-weight: 900 !important;
+    }
+    
+    /* إخفاء الصور غير الضرورية */
+    .print--invoice .invoice-logo,
+    .print--invoice .top-info img {
+        display: none !important;
+    }
+    
+    /* تحسين خط الفواصل */
+    .print--invoice .top-info .text-uppercase,
+    .print--invoice .receipt-divider {
+        font-size: 13px !important;
+        font-weight: 900 !important;
+        letter-spacing: 2px !important;
+        border-top: 2px dashed #000 !important;
+        border-bottom: 2px dashed #000 !important;
+        padding: 4px 0 !important;
+        margin: 5px 0 !important;
+    }
+    
+    /* تحسين تذييل الفاتورة */
+    .print--invoice .copyright {
+        font-size: 10px !important;
+        margin-top: 10px !important;
+    }
+    
+    /* ضبط عرض الفاتورة للورق الحراري */
+    .print--invoice {
+        max-width: 280px !important;
+        width: 100% !important;
+        margin: 0 auto !important;
+        padding: 5px !important;
+    }
+
+
 
     /* .img-wrap svg, */
     .img-wrap img {
@@ -6614,7 +6692,8 @@ strong {
         max-width: 100% !important;
         height: auto !important;
         visibility: visible !important;
-        padding: 10px 0;
+        padding: 10px 10px;
+        font-weight: 800;
     }
 }
 

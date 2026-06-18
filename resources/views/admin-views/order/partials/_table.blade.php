@@ -104,7 +104,7 @@
             <a class="ml-2 btn btn-sm btn--warning btn-outline-warning action-btn" href="{{route($parcel_order?'admin.parcel.order.details':'admin.order.details',['id'=>$order['id'],'module_id'=>$order['module_id']])}}">
                 <i class="tio-invisible"></i>
             </a>
-            <a class="ml-2 btn btn-sm btn--primary btn-outline-primary action-btn" href="{{route($parcel_order?'admin.order.generate-invoice':'admin.order.generate-invoice',['id'=>$order['id'],'module_id'=>$order['module_id']])}}">
+            <a class="ml-2 btn btn-sm btn--primary btn-outline-primary action-btn" target="_blank" href="{{route($parcel_order?'admin.order.print-invoice':'admin.order.print-invoice',['id'=>$order['id'],'module_id'=>$order['module_id']])}}">
                 <i class="tio-print"></i>
             </a>
         </div>

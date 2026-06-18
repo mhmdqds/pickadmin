@@ -204,10 +204,17 @@ class FileManagerController extends Controller
     public function destroy($file_path)
     {
         try {
-            Storage::disk('local')->delete(base64_decode($file_path));
-            Storage::disk('s3')->delete(base64_decode($file_path));
-        } catch (\Exception $e){
+            $decodedPath = base64_decode($file_path, true);
+            if ($decodedPath === false || str_contains($decodedPath, '..')) {
+                Toastr::error(translate('messages.invalid_file_path'));
+                return back();
+            }
 
+            Storage::disk('local')->delete($decodedPath);
+            Storage::disk('s3')->delete($decodedPath);
+        } catch (\Exception $e){
+            Toastr::error(translate('messages.failed_to_delete_image'));
+            return back();
         }
         Toastr::success(translate('messages.image_deleted_successfully'));
         return back()->with('success', translate('messages.image_deleted_successfully'));

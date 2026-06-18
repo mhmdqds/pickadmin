@@ -1,0 +1,140 @@
+================================================================================
+SMARTWEBYE - PHASE 2 DEPLOYMENT LIST
+PickAdmin Laravel Security Remediation - Phase 2 Files
+================================================================================
+
+PROJECT: PickAdmin (6amTech StackFood Multi-Restaurant)
+DATE: 2026-06-18
+PHASE: 2 (Deep Architecture Audit & Remediation)
+STATUS: READY FOR DEPLOYMENT
+
+================================================================================
+[MODIFIED FILES]
+================================================================================
+
+[1] app/Http/Controllers/Api/V1/OrderController.php
+    CHANGES:
+      - Fixed IDOR in parcelReturn() method (line ~755)
+        Added: user_id check with auth()->id()
+        Added: 404 response for unauthorized order access
+      - Fixed IDOR in walletPayment() method (line ~786)
+        Added: user_id check with auth()->id()
+        Added: 404 response for unauthorized order access
+    SYNTAX CHECK: PASSED (php -l)
+
+[2] app/Http/Controllers/Api/V1/ItemController.php
+    CHANGES:
+      - Fixed IDOR in submit_product_review() method (line ~614)
+        Changed: Order::find() to Order::where(['id' => ..., 'user_id' => ...])
+        Added: user_id variable for consistency
+      - Secured file upload in submit_product_review() method
+        Added: Extension whitelist validation
+        Allowed: jpg, jpeg, png, gif, webp
+        Blocked: php, svg, html, sh, exe, bat
+    SYNTAX CHECK: PASSED (php -l)
+
+[3] app/Http/Controllers/Api/V1/DeliveryManReviewController.php
+    CHANGES:
+      - Secured file upload in submit_review() method
+        Added: Extension whitelist validation
+        Allowed: jpg, jpeg, png, gif, webp
+        Blocked: php, svg, html, sh, exe, bat
+    SYNTAX CHECK: PASSED (php -l)
+
+================================================================================
+[DELETED FILES / DIRECTORIES]
+================================================================================
+
+[1] Modules/AwgCloud/
+    DELETED BY: Technical Manager
+    REASON: Data Exfiltration Backdoor
+    CONFIRMED CLEAN: No references remain in codebase
+    - No entries in modules_statuses.json
+    - No use statements in PHP files
+    - No injected code in core files (NotificationTrait, Helpers, SMS_module, SmsGateway)
+    - No base64 encoded backdoor strings found
+
+================================================================================
+DEPLOYMENT INSTRUCTIONS
+================================================================================
+
+1. BACKUP CURRENT FILES:
+   cp app/Http/Controllers/Api/V1/OrderController.php backup/
+   cp app/Http/Controllers/Api/V1/ItemController.php backup/
+   cp app/Http/Controllers/Api/V1/DeliveryManReviewController.php backup/
+
+2. DEPLOY MODIFIED FILES:
+   rsync -av app/Http/Controllers/Api/V1/OrderController.php server:/path/
+   rsync -av app/Http/Controllers/Api/V1/ItemController.php server:/path/
+   rsync -av app/Http/Controllers/Api/V1/DeliveryManReviewController.php server:/path/
+
+3. VERIFY AwgCloud DELETION:
+   ls -la Modules/AwgCloud  # Should return: No such file or directory
+
+4. CLEAR CACHES:
+   php artisan cache:clear
+   php artisan config:clear
+   php artisan route:clear
+
+5. VERIFY DEPLOYMENT:
+   curl -X POST https://your-api/parcel-return \
+     -H "Authorization: Bearer INVALID_TOKEN" \
+     -d '{"order_id": 99999}' | grep "not_found"
+
+================================================================================
+PRE-DEPLOYMENT CHECKLIST
+================================================================================
+
+[ ] All modified files syntax-checked (php -l)
+[ ] AwgCloud module fully removed
+[ ] No remaining references to deleted module
+[ ] Core files (Helpers.php, SMS_module.php, etc.) verified clean
+[ ] Database backup completed
+[ ] Staging environment tested
+[ ] Rollback plan ready
+
+================================================================================
+ROLLBACK PLAN
+================================================================================
+
+If issues occur:
+
+1. IMMEDIATE (0-5 minutes):
+   git checkout HEAD -- app/Http/Controllers/Api/V1/
+   # OR restore from backup directory
+
+2. CLEAR CACHES:
+   php artisan cache:clear
+   php artisan config:clear
+
+3. VERIFY:
+   php -l app/Http/Controllers/Api/V1/*.php
+
+================================================================================
+VERIFICATION COMMANDS
+================================================================================
+
+# Verify no AwgCloud references
+grep -r "AwgCloud\|awg_cloud\|arrocy" app/ --include="*.php" || echo "CLEAN"
+
+# Verify no IDOR patterns remain
+grep -n "Order::where(\['id' => \$request->order_id\]\)" \
+  app/Http/Controllers/Api/V1/OrderController.php || echo "FIXED"
+
+# Verify file upload security
+grep -n "allowedExtensions" \
+  app/Http/Controllers/Api/V1/ItemController.php \
+  app/Http/Controllers/Api/V1/DeliveryManReviewController.php
+
+================================================================================
+CONTACT
+================================================================================
+
+SMARTWEBYE Security Team
+Phase 2 Deployment Package
+Version: 1.0
+Date: 2026-06-18
+
+================================================================================
+END OF DEPLOYMENT LIST
+================================================================================

@@ -28,7 +28,7 @@
                 @endif
                 <div class="top-info">
                     <img src="{{ asset('/public/assets/admin/img/invoice-star.png') }}" alt="" class="w-100">
-                    <div class="text-uppercase text-center">{{ translate('messages.cash_receipt') }}</div>
+                    <div class="text-uppercase text-center receipt-divider">{{ translate('messages.cash_receipt') }}</div>
                     <img src="{{ asset('/public/assets/admin/img/invoice-star.png') }}" alt="" class="w-100">
                 </div>
                 <div class="order-info-id text-center">
@@ -142,7 +142,6 @@
                                             {{ $item['name'] }} <br>
                                             @if ($order->store && $order->store->module->module_type == 'food')
                                                 @if (count(json_decode($detail['variation'], true)) > 0)
-                                                    <strong><u>{{ translate('messages.variation') }} : </u></strong>
                                                     @foreach (json_decode($detail['variation'], true) as $variation)
                                                         @if (isset($variation['name']) && isset($variation['values']))
                                                             <span class="d-block text-capitalize">
@@ -170,9 +169,7 @@
                                                 @endif
                                              @else
                                                                     @if (count(json_decode($detail['variation'], true)) > 0)
-                                                                        <strong><u>{{ translate('messages.variation') }}
-                                                                                :
-                                                                            </u></strong>
+
                                                                     <?php
                                                                         $detailsVariation = isset(json_decode($detail['variation'], true)[0]) ? json_decode($detail['variation'], true)[0] : json_decode($detail['variation'], true);
                                                                     ?>
@@ -192,8 +189,7 @@
                                             <div class="addons">
                                                 @foreach (json_decode($detail['add_ons'], true) as $key2 => $addon)
                                                     @if ($key2 == 0)
-                                                        <strong><u>{{ translate('messages.addons') }} :
-                                                            </u></strong>
+
                                                     @endif
                                                     <div>
                                                         <span class="text-break">{{ $addon['name'] }} : </span>
@@ -237,11 +233,11 @@
                                 </dt>
                                 <dd class="col-6">
                                     {{ \App\CentralLogics\Helpers::format_currency($sub_total + $add_ons_cost) }}</dd>
-                                <dt class="col-6">{{ translate('messages.discount') }}:</dt>
-                                <dd class="col-6">
-                                    -
-                                    {{ \App\CentralLogics\Helpers::format_currency($order['store_discount_amount'] + $order['flash_admin_discount_amount'] + $order['flash_store_discount_amount']) }}
-                                </dd>
+                                <!--<dt class="col-6">{{ translate('messages.discount') }}:</dt>-->
+                                <!--<dd class="col-6">-->
+                                <!--    --->
+                                <!--    {{ \App\CentralLogics\Helpers::format_currency($order['store_discount_amount'] + $order['flash_admin_discount_amount'] + $order['flash_store_discount_amount']) }}-->
+                                <!--</dd>-->
 
 
                                 <dt class="col-6">{{ translate('messages.coupon_discount') }}:</dt>

@@ -781,7 +781,14 @@ trait PlaceNewOrder
                     ];
                 }
             } else {
-                $store = Store::with(['discount', 'store_sub'])->selectRaw('*, IF(((select count(*) from `store_schedule` where `stores`.`id` = `store_schedule`.`store_id` and `store_schedule`.`day` = ' . $schedule_at->format('w') . ' and `store_schedule`.`opening_time` < "' . $schedule_at->format('H:i:s') . '" and `store_schedule`.`closing_time` >"' . $schedule_at->format('H:i:s') . '") > 0), true, false) as open')->where('id', $request->store_id)->first();
+                $store = Store::with(['discount', 'store_sub'])
+                    ->selectRaw('*, IF(((select count(*) from `store_schedule` where `stores`.`id` = `store_schedule`.`store_id` and `store_schedule`.`day` = ? and `store_schedule`.`opening_time` < ? and `store_schedule`.`closing_time` > ?) > 0), true, false) as open', [
+                        $schedule_at->format('w'),
+                        $schedule_at->format('H:i:s'),
+                        $schedule_at->format('H:i:s')
+                    ])
+                    ->where('id', $request->store_id)
+                    ->first();
                 if ($store) {
                     $zone = Zone::where('id', $store->zone_id)->whereContains('coordinates', new Point($request->latitude, $request->longitude, POINT_SRID))->first();
                 }

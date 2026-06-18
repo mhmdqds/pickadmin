@@ -611,17 +611,18 @@ class ItemController extends Controller
             'rating' => 'required|numeric|max:5',
         ]);
 
-        $order = Order::find($request->order_id);
+        $user_id = $request->user()->id;
+        $order = Order::where(['id' => $request->order_id, 'user_id' => $user_id])->first();
         if (isset($order) == false) {
             $validator->errors()->add('order_id', translate('messages.order_data_not_found'));
         }
 
         $item = Item::find($request->item_id);
-        if (isset($order) == false) {
+        if (isset($item) == false) {
             $validator->errors()->add('item_id', translate('messages.item_not_found'));
         }
 
-        $multi_review = Review::where(['item_id' => $request->item_id, 'user_id' => $request->user()->id, 'order_id'=>$request->order_id])->first();
+        $multi_review = Review::where(['item_id' => $request->item_id, 'user_id' => $user_id, 'order_id'=>$request->order_id])->first();
         if (isset($multi_review)) {
             return response()->json([
                 'errors' => [
@@ -638,8 +639,17 @@ class ItemController extends Controller
 
         $image_array = [];
         if (!empty($request->file('attachment'))) {
+            $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
             foreach ($request->file('attachment') as $image) {
                 if ($image != null) {
+                    $extension = strtolower($image->getClientOriginalExtension());
+                    if (!in_array($extension, $allowedExtensions)) {
+                        return response()->json([
+                            'errors' => [
+                                ['code' => 'attachment', 'message' => translate('messages.invalid_file_type_only_images_allowed')]
+                            ]
+                        ], 403);
+                    }
                     if (!Storage::disk('public')->exists('review')) {
                         Storage::disk('public')->makeDirectory('review');
                     }
