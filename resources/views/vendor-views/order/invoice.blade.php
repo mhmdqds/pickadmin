@@ -31,6 +31,15 @@
             window.print();
             document.body.innerHTML = originalContents;
         }
+
+        // Auto-print invoice when opened from cancellation notification
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                if (document.getElementById('printableArea')) {
+                    printDiv('printableArea');
+                }
+            }, 800);
+        });
     </script>
 @endpush
 

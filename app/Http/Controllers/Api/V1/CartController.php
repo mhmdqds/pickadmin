@@ -43,6 +43,7 @@ class CartController extends Controller
             'model' => 'required|string|in:Item,ItemCampaign',
             'price' => 'required|numeric',
             'quantity' => 'required|integer|min:1',
+            'note' => 'nullable|string|max:2000',
         ]);
 
         if ($validator->fails()) {
@@ -85,6 +86,7 @@ class CartController extends Controller
         $cart->price = $request->price;
         $cart->quantity = $request->quantity;
         $cart->variation = isset($request->variation)?json_encode($request->variation):json_encode([]);
+        $cart->note = $request->note;
         $cart->save();
 
         $item->carts()->save($cart);
@@ -108,6 +110,7 @@ class CartController extends Controller
             'guest_id' => $request->user ? 'nullable' : 'required',
             'price' => 'required|numeric',
             'quantity' => 'required|integer|min:1',
+            'note' => 'nullable|string|max:2000',
         ]);
 
         if ($validator->fails()) {
@@ -134,6 +137,7 @@ class CartController extends Controller
         $cart->price = $request->price;
         $cart->quantity = $request->quantity;
         $cart->variation = isset($request->variation)?json_encode($request->variation):$cart->variation;
+        $cart->note = $request->note ?? $cart->note;
         $cart->save();
 
         $carts = Cart::where('user_id', $user_id)->where('is_guest',$is_guest)->where('module_id',getModuleId($request->header('moduleId')))->get()

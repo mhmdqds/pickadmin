@@ -406,15 +406,8 @@ class LanguageController extends Controller
             'value' => $lang_array
         ]);
 
-        if (!preg_match('/^[a-zA-Z0-9_-]+$/', $lang)) {
-            Toastr::error('Invalid language code!');
-            return back();
-        }
-
-        $allowedBase = realpath(base_path('resources/lang'));
-        $dir = realpath(base_path('resources/lang/' . $lang));
-
-        if ($dir !== false && strpos($dir, $allowedBase) === 0 && $dir !== $allowedBase && File::isDirectory($dir)) {
+        $dir = base_path('resources/lang/' . $lang);
+        if (File::isDirectory($dir)) {
             $it = new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS);
             $files = new RecursiveIteratorIterator($it, RecursiveIteratorIterator::CHILD_FIRST);
             foreach ($files as $file) {

@@ -346,6 +346,11 @@
                                                                     {{ $detail['quantity'] }} x
                                                                     {{ \App\CentralLogics\Helpers::format_currency($detail['price']) }}
                                                                 </h6>
+                                                                @if (!empty($detail['note']))
+                                                                    <div class="badge-soft-info px-2 py-1 rounded mt-1 d-inline-block">
+                                                                        <small class="font-weight-bold">{{ translate('messages.note') }}: {{ $detail['note'] }}</small>
+                                                                    </div>
+                                                                @endif
                                                                 @if ($order->store && $order->store->module->module_type == 'food')
                                                                     @if (isset($detail['variation']) ? json_decode($detail['variation'], true) : [])
                                                                         @foreach (json_decode($detail['variation'], true) as $variation)
@@ -465,6 +470,11 @@
                                                                     {{ $detail['quantity'] }} x
                                                                     {{ \App\CentralLogics\Helpers::format_currency($detail['price']) }}
                                                                 </h6>
+                                                                @if (!empty($detail['note']))
+                                                                    <div class="badge-soft-info px-2 py-1 rounded mt-1 d-inline-block">
+                                                                        <small class="font-weight-bold">{{ translate('messages.note') }}: {{ $detail['note'] }}</small>
+                                                                    </div>
+                                                                @endif
 
                                                                 @if (count(json_decode($detail['variation'], true)) > 0)
                                                                     <strong><u>{{ translate('messages.variation') }} :

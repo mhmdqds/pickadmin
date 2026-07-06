@@ -111,6 +111,37 @@ $countryCode = strtolower($country ? $country : 'auto');
             data-password-validation="{{ translate('password_must_be_8+_chars_with_upper,_lower,_number_&_symbol') }}">
         </div>
 
+        <style>
+            /* Responsive popup modal styles */
+            #popup-modal .modal-dialog {
+                max-width: 500px;
+                margin: 1.75rem auto;
+            }
+            @media (max-width: 576px) {
+                #popup-modal .modal-dialog {
+                    max-width: 90%;
+                    margin: 1rem auto;
+                }
+                #popup-modal .update_notification_text {
+                    font-size: 1.2rem;
+                }
+                #popup-modal .check-order {
+                    font-size: 0.9rem;
+                    padding: 0.5rem 1rem;
+                }
+            }
+            #popup-modal .order-number-link {
+                display: inline-block;
+                padding: 0.25rem 0.75rem;
+                border-radius: 0.375rem;
+                background-color: rgba(0, 170, 109, 0.1);
+                transition: all 0.2s ease;
+            }
+            #popup-modal .order-number-link:hover {
+                background-color: rgba(0, 170, 109, 0.2);
+                text-decoration: none;
+            }
+        </style>
         <div class="modal fade" id="popup-modal">
             <div class="modal-dialog modal-dialog-centered" role="document">
                 <div class="modal-content">
@@ -122,6 +153,9 @@ $countryCode = strtolower($country ? $country : 'auto');
                                         <i class="tio-shopping-cart-outlined"></i>
                                         {{translate('messages.You have new order, Check Please.')}}
                                     </h2>
+                                    <div class="order-number-container mt-2 mb-2 d-none">
+                                        <a href="#" class="order-number-link fw-bold text-primary" style="font-size: 1.2rem; text-decoration: underline;"></a>
+                                    </div>
                                     <hr>
                                     <button
                                         class="btn btn-primary check-order">{{translate('messages.Ok, let me check')}}</button>
@@ -747,15 +781,90 @@ if (in_array(config('module.current_module_type'), config('module.module_type'))
                         new_module_id = payload.data.module_id
                         admin_zone_id = '<?php    echo auth()->guard('admin')->user()->zone_id;?>';
                         admin_role_id = '<?php    echo auth()->guard('admin')->user()->role_id;?>';
+                        
+                        let orderId = payload.data.order_id;
+                        
+                        // Reset popup for new order
+                        let notificationText = '<i class="tio-shopping-cart-outlined"></i> {{translate('messages.You have new order, Check Please.')}}';
                         if (new_order_type === 'trip') {
-                            document.querySelector('.update_notification_text').textContent = "{{translate('messages.You have new trip, Check Please.')}}";
+                            notificationText = "{{translate('messages.You have new trip, Check Please.')}}";
                         }
                         @if(addon_published_status('RideShare'))
                             if (new_order_type === 'ride_request') {
-                                document.querySelector('.update_notification_text').textContent = "{{translate('messages.You have new ride request, Check Please.')}}";
+                                notificationText = "{{translate('messages.You have new ride request, Check Please.')}}";
                             }
                         @endif
-                            if (admin_role_id === '1') {
+                        document.querySelector('.update_notification_text').innerHTML = notificationText;
+                        
+                        // Show order number if available
+                        let orderNumberContainer = document.querySelector('.order-number-container');
+                        let orderNumberLink = document.querySelector('.order-number-link');
+                        if (orderId && orderNumberContainer && orderNumberLink) {
+                            orderNumberContainer.classList.remove('d-none');
+                            orderNumberLink.textContent = '#' + orderId;
+                            orderNumberLink.href = baseUrl + '/admin/order/details/' + orderId;
+                            
+                            orderNumberLink.onclick = function(e) {
+                                e.preventDefault();
+                                window.open(baseUrl + '/admin/order/details/' + orderId, '_blank');
+                                $('#popup-modal').modal('hide');
+                            };
+                        } else if (orderNumberContainer) {
+                            orderNumberContainer.classList.add('d-none');
+                        }
+                        
+                        // Update button text and store order ID
+                        let checkOrderBtn = document.querySelector('.check-order');
+                        checkOrderBtn.textContent = "{{translate('messages.Ok, let me check')}}";
+                        checkOrderBtn.setAttribute('data-order-id', orderId || '');
+                        
+                        if (admin_role_id === '1') {
+                            playAudio();
+                            $('#popup-modal').appendTo("body").modal('show');
+                        }
+                        if ((admin_role_id !== '1') && (admin_zone_id === payload.data.zone_id)) {
+                            playAudio();
+                            $('#popup-modal').appendTo("body").modal('show');
+                        }
+                    @endif
+
+        } else if (payload.data.order_id && payload.data.type == "order_canceled") {
+                    @php($admin_order_notification = \App\CentralLogics\Helpers::get_business_settings('admin_order_notification') ?? 0)
+                    @if (\App\CentralLogics\Helpers::module_permission_check('order') && $admin_order_notification && $order_notification_type == 'firebase')
+                        new_order_type = payload.data.order_type
+                        new_module_id = payload.data.module_id
+                        admin_zone_id = '<?php    echo auth()->guard('admin')->user()->zone_id;?>';
+                        admin_role_id = '<?php    echo auth()->guard('admin')->user()->role_id;?>';
+                        
+                        // Setup cancellation popup
+                        document.querySelector('.update_notification_text').innerHTML = '<i class="tio-remove-circle text-danger"></i> {{translate('messages.Order Cancelled')}}';
+                        document.querySelector('.order-number-container').classList.remove('d-none');
+                        
+                        let orderNumberLink = document.querySelector('.order-number-link');
+                        let orderId = payload.data.order_id;
+                        orderNumberLink.textContent = '#' + orderId;
+                        orderNumberLink.href = baseUrl + '/admin/order/details/' + orderId;
+                        
+                        // Update button text
+                        document.querySelector('.check-order').textContent = "{{translate('messages.Close')}}";
+                        
+                        // Handle click on order number - open details and print invoice
+                        orderNumberLink.onclick = function(e) {
+                            e.preventDefault();
+                            
+                            // Open print invoice first (has auto-print logic)
+                            let printWindow = window.open(baseUrl + '/admin/order/print-invoice/' + orderId, '_blank');
+                            
+                            // Open order details after a short delay to avoid popup blocking
+                            setTimeout(function() {
+                                window.open(baseUrl + '/admin/order/details/' + orderId, '_blank');
+                            }, 500);
+                            
+                            // Close the notification modal
+                            $('#popup-modal').modal('hide');
+                        };
+                        
+                        if (admin_role_id === '1') {
                             playAudio();
                             $('#popup-modal').appendTo("body").modal('show');
                         }
@@ -855,13 +964,85 @@ if (in_array(config('module.current_module_type'), config('module.module_type'))
                             let data = response.data;
                             new_order_type = data.type;
                             new_module_id = data.module_id;
-                            if (new_order_type === 'trip') {
-                                document.querySelector('.update_notification_text').textContent = "{{translate('messages.You have new trip, Check Please.')}}";
+                            
+                            // Handle cancelled order notification (manual mode)
+                            if (data.new_cancelled_order > 0 && data.cancelled_order_id) {
+                                let cancelledOrderId = data.cancelled_order_id;
+                                admin_zone_id = '<?php echo auth()->guard('admin')->user()->zone_id;?>';
+                                admin_role_id = '<?php echo auth()->guard('admin')->user()->role_id;?>';
+                                
+                                // Mark order as checked to prevent repeated notifications
+                                $.get(baseUrl + '/admin/mark-order-checked/' + cancelledOrderId, function(response) {
+                                    if (response.success) {
+                                        console.log('Order #' + cancelledOrderId + ' marked as checked');
+                                    }
+                                });
+                                
+                                document.querySelector('.update_notification_text').innerHTML = '<i class="tio-remove-circle text-danger"></i> {{translate('messages.Order Cancelled')}}';
+                                document.querySelector('.order-number-container').classList.remove('d-none');
+                                
+                                let orderNumberLink = document.querySelector('.order-number-link');
+                                orderNumberLink.textContent = '#' + cancelledOrderId;
+                                orderNumberLink.href = baseUrl + '/admin/order/details/' + cancelledOrderId;
+                                document.querySelector('.check-order').textContent = "{{translate('messages.Close')}}";
+                                
+                                orderNumberLink.onclick = function(e) {
+                                    e.preventDefault();
+                                    let printWindow = window.open(baseUrl + '/admin/order/print-invoice/' + cancelledOrderId, '_blank');
+                                    setTimeout(function() {
+                                        window.open(baseUrl + '/admin/order/details/' + cancelledOrderId, '_blank');
+                                    }, 500);
+                                    $('#popup-modal').modal('hide');
+                                };
+                                
+                                if (admin_role_id === '1') {
+                                    playAudio();
+                                    $('#popup-modal').appendTo("body").modal('show');
+                                }
+                                if ((admin_role_id !== '1') && (admin_zone_id === data.zone_id)) {
+                                    playAudio();
+                                    $('#popup-modal').appendTo("body").modal('show');
+                                }
+                                return;
                             }
-                            if (new_order_type === 'ride_request') {
-                                document.querySelector('.update_notification_text').textContent = "{{translate('You have new ride request, Check Please.')}}";
-                            }
+                            
+                            // Handle new order notification (manual mode)
                             if (data.new_order > 0) {
+                                let orderId = data.order_id;
+                                
+                                // Update notification text with order number
+                                let notificationText = '<i class="tio-shopping-cart-outlined"></i> {{translate('messages.You have new order, Check Please.')}}';
+                                if (new_order_type === 'trip') {
+                                    notificationText = "{{translate('messages.You have new trip, Check Please.')}}";
+                                } else if (new_order_type === 'ride_request') {
+                                    notificationText = "{{translate('You have new ride request, Check Please.')}}";
+                                }
+                                document.querySelector('.update_notification_text').innerHTML = notificationText;
+                                
+                                // Show order number if available
+                                let orderNumberContainer = document.querySelector('.order-number-container');
+                                let orderNumberLink = document.querySelector('.order-number-link');
+                                if (orderId && orderNumberContainer && orderNumberLink) {
+                                    orderNumberContainer.classList.remove('d-none');
+                                    orderNumberLink.textContent = '#' + orderId;
+                                    orderNumberLink.href = baseUrl + '/admin/order/details/' + orderId;
+                                    
+                                    // Click handler for order number link
+                                    orderNumberLink.onclick = function(e) {
+                                        e.preventDefault();
+                                        window.open(baseUrl + '/admin/order/details/' + orderId, '_blank');
+                                        $('#popup-modal').modal('hide');
+                                    };
+                                } else if (orderNumberContainer) {
+                                    orderNumberContainer.classList.add('d-none');
+                                }
+                                
+                                // Update button text
+                                document.querySelector('.check-order').textContent = "{{translate('messages.Ok, let me check')}}";
+                                
+                                // Store order ID for button click
+                                document.querySelector('.check-order').setAttribute('data-order-id', orderId || '');
+                                
                                 playAudio();
                                 $('#popup-modal').appendTo("body").modal('show');
                             } else {
@@ -874,19 +1055,58 @@ if (in_array(config('module.current_module_type'), config('module.module_type'))
             @endif
 
             $(document).on('click', '.check-order', function () {
+                // If this is a cancellation notification, just close the modal
+                if ($('.order-number-container').is(':visible') && $('.check-order').text().trim() === "{{translate('messages.Close')}}") {
+                    $('#popup-modal').modal('hide');
+                    // Reset popup state for next notification
+                    setTimeout(function() {
+                        document.querySelector('.update_notification_text').innerHTML = '<i class="tio-shopping-cart-outlined"></i> {{translate('messages.You have new order, Check Please.')}}';
+                        document.querySelector('.order-number-container').classList.add('d-none');
+                        document.querySelector('.check-order').textContent = "{{translate('messages.Ok, let me check')}}";
+                        document.querySelector('.check-order').removeAttribute('data-order-id');
+                    }, 300);
+                    return;
+                }
+                
+                // Get stored order ID
+                let orderId = $(this).attr('data-order-id');
+                let targetUrl = '';
+                
                 if (new_order_type === 'parcel') {
-                    location.href = '{{url('/')}}/admin/parcel/orders/all?module_id=' + new_module_id;
+                    targetUrl = '{{url('/')}}/admin/parcel/orders/all?module_id=' + new_module_id;
                 } else if (new_order_type === 'trip') {
-                    location.href = '{{url('/')}}/admin/rental/trip?module_id=' + new_module_id;
+                    targetUrl = '{{url('/')}}/admin/rental/trip?module_id=' + new_module_id;
                 } else if (new_order_type === 'ride_request') {
                     @if(addon_published_status('RideShare'))
-                        location.href = '{{url('/')}}/admin/ride-share/ride/list/all?module_id=' + {{ \App\Models\Module::where('module_type', 'ride-share')->first()?->id }};
+                        targetUrl = '{{url('/')}}/admin/ride-share/ride/list/all?module_id=' + {{ \App\Models\Module::where('module_type', 'ride-share')->first()?->id }};
                     @else
-                        location.href = '{{url('/')}}/admin/order/list/all?module_id=' + new_module_id;
+                        targetUrl = '{{url('/')}}/admin/order/list/all?module_id=' + new_module_id;
                     @endif
-        } else {
-                    location.href = '{{url('/')}}/admin/order/list/all?module_id=' + new_module_id;
+                } else {
+                    targetUrl = '{{url('/')}}/admin/order/list/all?module_id=' + new_module_id;
                 }
+                
+                // Confirm the order if orderId exists (for store orders only)
+                if (orderId && orderId !== '' && new_order_type !== 'trip' && new_order_type !== 'ride_request') {
+                    // Call API to confirm order status
+                    $.ajax({
+                        url: baseUrl + '/admin/confirm-order-notification/' + orderId,
+                        type: 'GET',
+                        dataType: 'json',
+                        success: function(response) {
+                            console.log('Order confirmation response:', response);
+                        },
+                        error: function(xhr, status, error) {
+                            console.error('Order confirmation failed:', error);
+                        }
+                    });
+                    
+                    // Open print invoice
+                    let printWindow = window.open(baseUrl + '/admin/order/print-invoice/' + orderId, '_blank');
+                }
+                
+                // Navigate to orders page
+                window.location.href = targetUrl;
             });
 
             startFCM();

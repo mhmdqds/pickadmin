@@ -19,6 +19,7 @@ class Cart extends Model
         'add_on_ids' => 'array',
         'add_on_qtys' => 'array',
         'variation' => 'array',
+        'note' => 'string',
     ];
 
     protected $fillable = [
@@ -32,6 +33,7 @@ class Cart extends Model
         'price',
         'quantity',
         'variation',
+        'note',
     ];
 
     public function item()

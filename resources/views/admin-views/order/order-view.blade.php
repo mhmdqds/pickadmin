@@ -536,6 +536,11 @@
                                                                     {{ $detail['quantity'] }} x
                                                                     {{ \App\CentralLogics\Helpers::format_currency($detail['price']) }}
                                                                 </h6>
+                                                                @if (!empty($detail['note']))
+                                                                    <div class="badge-soft-info px-2 py-1 rounded mt-1 d-inline-block">
+                                                                        <small class="font-weight-bold">{{ translate('messages.note') }}: {{ $detail['note'] }}</small>
+                                                                    </div>
+                                                                @endif
                                                                 @if ($order->store && $order->store->module->module_type == 'food')
                                                                     @if (isset($detail['variation']) ? json_decode($detail['variation'], true) : [])
                                                                         @foreach (json_decode($detail['variation'], true) as $variation)
@@ -681,6 +686,11 @@
                                                                     {{ $detail['quantity'] }} x
                                                                     {{ \App\CentralLogics\Helpers::format_currency($detail['price']) }}
                                                                 </h6>
+                                                                @if (!empty($detail['note']))
+                                                                    <div class="badge-soft-info px-2 py-1 rounded mt-1 d-inline-block">
+                                                                        <small class="font-weight-bold">{{ translate('messages.note') }}: {{ $detail['note'] }}</small>
+                                                                    </div>
+                                                                @endif
                                                                 @if ($order->store && $order->store->module->module_type == 'food')
                                                                     @if (isset($detail['variation']) ? json_decode($detail['variation'], true) : [])
                                                                         @foreach (json_decode($detail['variation'], true) as $variation)
@@ -917,7 +927,14 @@
                                     <dt class="col-6 color-8a8a8a fs-12">{{ translate('messages.delivery_man_tips') }}</dt>
                                     <dd class="col-6 text-dark fs-14">
                                         + {{ \App\CentralLogics\Helpers::format_currency($deliverman_tips) }}</dd>
-                                    <dt class="col-6 color-8a8a8a fs-12">{{ \App\CentralLogics\Helpers::get_business_data('additional_charge_name')??\App\CentralLogics\Helpers::get_business_data('additional_charge_name')??translate('messages.additional_charge') }}</dt>
+                                     <dt class="col-6 color-8a8a8a fs-12">
+                                        {{ \App\CentralLogics\Helpers::get_business_data('additional_charge_name')??\App\CentralLogics\Helpers::get_business_data('additional_charge_name')??translate('messages.additional_charge') }}
+                                        @if(in_array($order->order_status, ['pending', 'confirmed']))
+                                            <button type="button" class="btn btn--primary btn--sm ml-2" data-toggle="modal" data-target="#additionalChargeModal">
+                                                <i class="tio-edit"></i> {{ translate('Edit') }}
+                                            </button>
+                                        @endif
+                                    </dt>
 
                                     <dd class="col-6 text-dark fs-14">
                                         + {{ \App\CentralLogics\Helpers::format_currency($additional_charge) }}</dd>
@@ -2197,6 +2214,44 @@
                         </div>
                     </form>
                 </div>
+				        </div>
+    </div>
+
+    <!-- Additional Charge Edit Modal -->
+    <div class="modal fade" id="additionalChargeModal" tabindex="-1" role="dialog" aria-labelledby="additionalChargeModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="additionalChargeModalLabel">{{ translate('Edit Additional Charge') }}</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <form action="{{ route('admin.order.update_additional_charge') }}" method="POST">
+                    @csrf
+                    <input type="hidden" name="order_id" value="{{ $order->id }}">
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="charge_name">{{ translate('Charge Name') }}</label>
+                            <input type="text" class="form-control" id="charge_name" name="charge_name"
+                                   value="{{ \App\CentralLogics\Helpers::get_business_data('additional_charge_name') ?? translate('Additional Charge') }}"
+                                   placeholder="{{ translate('Enter charge name') }}">
+                        </div>
+                        <div class="form-group">
+                            <label for="additional_charge">{{ translate('Amount') }} ({{ \App\CentralLogics\Helpers::currency_code() }})</label>
+                            <input type="number" class="form-control" id="additional_charge" name="additional_charge"
+                                   value="{{ $order->additional_charge }}" min="0" step="0.01" required>
+                            <small class="form-text text-muted">
+                                {{ translate('Current amount:') }} {{ \App\CentralLogics\Helpers::format_currency($order->additional_charge) }}
+                            </small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn--reset" data-dismiss="modal">{{ translate('Cancel') }}</button>
+                        <button type="submit" class="btn btn--primary">{{ translate('Update Charge') }}</button>
+                    </div>
+                </form>
+				</div>
             </div>
         </div>
 @endsection

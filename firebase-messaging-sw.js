@@ -2,14 +2,15 @@ importScripts('https://www.gstatic.com/firebasejs/8.3.2/firebase-app.js');
 importScripts('https://www.gstatic.com/firebasejs/8.3.2/firebase-messaging.js');
 
 firebase.initializeApp({
-    apiKey: "AIzaSyDdEJeUfZV2yq3Lpz7Pa-1LvjNwxadkn8Y",
-    authDomain: "pikeles.firebaseapp.com",
-    projectId: "pikeles",
-    storageBucket: "pikeles.firebasestorage.app",
-    messagingSenderId: "661936871581",
-    appId: "1:661936871581:web:fe06362ae1209e5f715c74",
-    measurementId: "G-9MVSVCXSDB"
+    apiKey: "AIzaSyCXgsQ0vyOq3eTNX5iW1N2AurhYMNDUvlY",
+    authDomain: "pikelsstore.firebaseapp.com",
+    projectId: "pikelsstore",
+    storageBucket: "pikelsstore.firebasestorage.app",
+    messagingSenderId: "645849078423",
+    appId: "1:645849078423:web:05b798b020b113a654e7d2",
+    measurementId: "G-Q3M4YPVXEN"
 });
+
 
 const messaging = firebase.messaging();
 messaging.setBackgroundMessageHandler(function (payload) {

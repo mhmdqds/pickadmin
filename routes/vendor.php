@@ -16,6 +16,8 @@ Route::group(['namespace' => 'Vendor', 'as' => 'vendor.'], function () {
         Route::get('lang/{locale}', 'LanguageController@lang')->name('lang');
         Route::get('/', 'DashboardController@dashboard')->name('dashboard');
         Route::get('/get-store-data', 'DashboardController@store_data')->name('get-store-data');
+        Route::get('/mark-order-checked/{id}', 'DashboardController@markOrderChecked')->name('mark-order-checked');
+        Route::get('/confirm-order-notification/{id}', 'DashboardController@confirmOrderFromNotification')->name('confirm-order-notification');
         Route::post('/store-token', 'DashboardController@updateDeviceToken')->name('store.token');
         Route::post('/verified-badge-popup-seen', 'DashboardController@verifiedBadgePopupSeen')->name('verified-badge-popup-seen');
 

@@ -32,6 +32,7 @@ use Illuminate\Validation\Rules\Password;
 use Modules\Gateways\Traits\SmsGateway;
 use MatanYadaev\EloquentSpatial\Objects\Point;
 use Modules\RideShare\Entities\ReviewModule\RideReview;
+use Illuminate\Support\Facades\Log;
 
 class CustomerController extends Controller
 {

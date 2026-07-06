@@ -11,6 +11,28 @@ class OrderDetail extends Model
 {
     use HasFactory , ReportFilter;
 
+    protected $fillable = [
+        'order_id',
+        'item_id',
+        'item_campaign_id',
+        'item_details',
+        'quantity',
+        'price',
+        'tax_amount',
+        'tax_status',
+        'discount_on_item',
+        'discount_type',
+        'discount_on_product_by',
+        'discount_percentage',
+        'variant',
+        'variation',
+        'add_ons',
+        'total_add_on_price',
+        'addon_discount',
+        'note',
+        'category_id',
+    ];
+
     protected $casts = [
         'price' => 'float',
         'discount_on_item' => 'float',
@@ -19,7 +41,9 @@ class OrderDetail extends Model
         'item_id'=> 'integer',
         'order_id'=> 'integer',
         'quantity'=>'integer',
-        'item_campaign_id'=>'integer'
+        'item_campaign_id'=>'integer',
+        'category_id' => 'integer',
+        'note' => 'string'
     ];
 
     protected $primaryKey   = 'id';

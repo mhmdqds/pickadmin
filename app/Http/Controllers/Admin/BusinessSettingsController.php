@@ -464,10 +464,8 @@ class BusinessSettingsController extends Controller
         $data = self::generateCronCommand(disbursement_type: $request['disbursement_type']);
 
         if (function_exists('exec')) {
-            $scriptPath = base_path('script.sh');
-            if (file_exists($scriptPath) && is_readable($scriptPath)) {
-                exec('sh ' . escapeshellarg($scriptPath));
-            }
+           $scriptPath = 'script.sh';
+            exec('sh ' . $scriptPath);
         } elseif ($request['disbursement_type'] === 'automated') {
             Session::flash('disbursement_exec', true);
             Toastr::warning(

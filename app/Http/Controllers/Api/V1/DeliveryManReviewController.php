@@ -76,17 +76,8 @@ class DeliveryManReviewController extends Controller
 
         $image_array = [];
         if (!empty($request->file('attachment'))) {
-            $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
             foreach ($request->file('attachment') as $image) {
                 if ($image != null) {
-                    $extension = strtolower($image->getClientOriginalExtension());
-                    if (!in_array($extension, $allowedExtensions)) {
-                        return response()->json([
-                            'errors' => [
-                                ['code' => 'attachment', 'message' => translate('messages.invalid_file_type_only_images_allowed')]
-                            ]
-                        ], 403);
-                    }
                     if (!Storage::disk('public')->exists('review')) {
                         Storage::disk('public')->makeDirectory('review');
                     }

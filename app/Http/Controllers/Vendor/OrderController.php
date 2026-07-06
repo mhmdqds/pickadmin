@@ -342,6 +342,7 @@ class OrderController extends Controller
 
                 $order->cancellation_reason = $request->reason;
                 $order->canceled_by = 'store';
+                $order->checked = 0;
 
                 $order?->store ?   Helpers::increment_order_count($order?->store) : '';
 

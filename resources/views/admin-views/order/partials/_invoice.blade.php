@@ -140,6 +140,11 @@
                                     <tr>
                                         <td class="text-break">
                                             {{ $item['name'] }} <br>
+                                            @if (!empty($detail['note']))
+                                                <div class="note-info mb-1" style="font-size: 11px; color: #555; font-style: italic;">
+                                                    <small><strong>{{ translate('messages.note') }}:</strong> {{ $detail['note'] }}</small>
+                                                </div>
+                                            @endif
                                             @if ($order->store && $order->store->module->module_type == 'food')
                                                 @if (count(json_decode($detail['variation'], true)) > 0)
                                                     @foreach (json_decode($detail['variation'], true) as $variation)
@@ -169,7 +174,6 @@
                                                 @endif
                                              @else
                                                                     @if (count(json_decode($detail['variation'], true)) > 0)
-
                                                                     <?php
                                                                         $detailsVariation = isset(json_decode($detail['variation'], true)[0]) ? json_decode($detail['variation'], true)[0] : json_decode($detail['variation'], true);
                                                                     ?>
@@ -189,7 +193,6 @@
                                             <div class="addons">
                                                 @foreach (json_decode($detail['add_ons'], true) as $key2 => $addon)
                                                     @if ($key2 == 0)
-
                                                     @endif
                                                     <div>
                                                         <span class="text-break">{{ $addon['name'] }} : </span>

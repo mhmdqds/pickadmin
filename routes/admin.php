@@ -58,6 +58,8 @@ Route::group(['namespace' => 'Admin', 'as' => 'admin.'], function () {
         Route::post('settings', 'SystemController@settings_update');
         Route::post('settings-password', 'SystemController@settings_password_update')->name('settings-password');
         Route::get('/get-store-data', 'SystemController@store_data')->name('get-store-data');
+        Route::get('/mark-order-checked/{id}', 'SystemController@markOrderChecked')->name('mark-order-checked');
+        Route::get('/confirm-order-notification/{id}', 'SystemController@confirmOrderFromNotification')->name('confirm-order-notification');
         Route::post('remove_image', 'BusinessSettingsController@remove_image')->name('remove_image');
         Route::get('system-currency', 'SystemController@system_currency')->name('system_currency');
         //dashboard
@@ -292,6 +294,7 @@ Route::group(['namespace' => 'Admin', 'as' => 'admin.'], function () {
         Route::get('order/print-invoice/{id}', 'OrderController@print_invoice')->name('order.print-invoice');
         Route::get('order/status', 'OrderController@status')->name('order.status');
         Route::get('order/offline-payment', 'OrderController@offline_payment')->name('order.offline_payment');
+        Route::post('order/update-additional-charge', 'OrderController@updateAdditionalCharge')->name('order.update_additional_charge');
         Route::group(['prefix' => 'order', 'as' => 'order.', 'middleware' => ['module:order']], function () {
             Route::get('list/{status}', 'OrderController@list')->name('list');
             Route::get('details/{id}', 'OrderController@details')->name('details');

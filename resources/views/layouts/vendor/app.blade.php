@@ -172,6 +172,37 @@ $verifiedBadgePopupLabel = isset($moduleType) && $moduleType == 'rental' ? trans
                 </div>
             </div>
         </div>
+        <style>
+            /* Responsive popup modal styles */
+            #popup-modal .modal-dialog {
+                max-width: 500px;
+                margin: 1.75rem auto;
+            }
+            @media (max-width: 576px) {
+                #popup-modal .modal-dialog {
+                    max-width: 90%;
+                    margin: 1rem auto;
+                }
+                #popup-modal .update_notification_text {
+                    font-size: 1.2rem;
+                }
+                #popup-modal .check-order {
+                    font-size: 0.9rem;
+                    padding: 0.5rem 1rem;
+                }
+            }
+            #popup-modal .order-number-link {
+                display: inline-block;
+                padding: 0.25rem 0.75rem;
+                border-radius: 0.375rem;
+                background-color: rgba(0, 170, 109, 0.1);
+                transition: all 0.2s ease;
+            }
+            #popup-modal .order-number-link:hover {
+                background-color: rgba(0, 170, 109, 0.2);
+                text-decoration: none;
+            }
+        </style>
         <div class="modal fade" id="popup-modal">
             <div class="modal-dialog modal-dialog-centered" role="document">
                 <div class="modal-content">
@@ -184,6 +215,9 @@ $verifiedBadgePopupLabel = isset($moduleType) && $moduleType == 'rental' ? trans
                                         <i class="tio-shopping-cart-outlined"></i>
                                         {{translate('messages.You have new order, Check Please.')}}
                                     </h2>
+                                    <div class="order-number-container mt-2 mb-2 d-none">
+                                        <a href="#" class="order-number-link fw-bold text-primary" style="font-size: 1.2rem; text-decoration: underline;"></a>
+                                    </div>
                                     <hr>
                                     <button
                                         class="btn btn-primary check-order">{{translate('messages.Ok, let me check')}}</button>
@@ -518,6 +552,8 @@ $verifiedBadgePopupLabel = isset($moduleType) && $moduleType == 'rental' ? trans
         firebase.initializeApp(firebaseConfig);
         const messaging = firebase.messaging();
 
+        let baseUrl = '{{ url('/') }}';
+
         function startFCM() {
             messaging
                 .requestPermission()
@@ -595,10 +631,53 @@ $verifiedBadgePopupLabel = isset($moduleType) && $moduleType == 'rental' ? trans
             if (payload.data.order_id && payload.data.type === 'new_order') {
                 @if(\App\CentralLogics\Helpers::employee_module_permission_check('order') && $order_notification_type == 'firebase')
                     order_type = payload.data.order_type
+                    is_trip = false;
                     if (order_type === 'trip') {
                         document.querySelector('.update_notification_text').textContent = "{{translate('messages.You have new trip, Check Please.')}}";
                         is_trip = true;
+                    } else {
+                        document.querySelector('.update_notification_text').innerHTML = '<i class="tio-shopping-cart-outlined"></i> {{translate('messages.You have new order, Check Please.')}}';
                     }
+                    // Reset order-number-container for new order
+                    document.querySelector('.order-number-container')?.classList.add('d-none');
+                    document.querySelector('.check-order').textContent = "{{translate('messages.Ok, let me check')}}";
+                    playAudio();
+                    $('#popup-modal').appendTo("body").modal('show');
+                @endif
+            } else if (payload.data.order_id && payload.data.type === 'order_canceled') {
+                @if(\App\CentralLogics\Helpers::employee_module_permission_check('order') && $order_notification_type == 'firebase')
+                    order_type = payload.data.order_type
+                    let canceledOrderId = payload.data.order_id;
+                    
+                    // Setup cancellation popup
+                    document.querySelector('.update_notification_text').innerHTML = '<i class="tio-remove-circle text-danger"></i> {{translate('messages.Order Cancelled')}}';
+                    document.querySelector('.order-number-container')?.classList.remove('d-none');
+                    
+                    let orderNumberLink = document.querySelector('.order-number-link');
+                    if (orderNumberLink) {
+                        orderNumberLink.textContent = '#' + canceledOrderId;
+                        orderNumberLink.href = baseUrl + '/vendor-panel/order/details/' + canceledOrderId;
+                        
+                        // Handle click on order number - open details and print invoice
+                        orderNumberLink.onclick = function(e) {
+                            e.preventDefault();
+                            
+                            // Open print invoice first (has auto-print logic)
+                            let printWindow = window.open(baseUrl + '/vendor-panel/order/generate-invoice/' + canceledOrderId, '_blank');
+                            
+                            // Open order details after a short delay to avoid popup blocking
+                            setTimeout(function() {
+                                window.open(baseUrl + '/vendor-panel/order/details/' + canceledOrderId, '_blank');
+                            }, 500);
+                            
+                            // Close the notification modal
+                            $('#popup-modal').modal('hide');
+                        };
+                    }
+                    
+                    // Update button text
+                    document.querySelector('.check-order').textContent = "{{translate('messages.Close')}}";
+                    
                     playAudio();
                     $('#popup-modal').appendTo("body").modal('show');
                 @endif
@@ -632,18 +711,82 @@ $verifiedBadgePopupLabel = isset($moduleType) && $moduleType == 'rental' ? trans
                     success: function (response) {
                         let data = response.data;
 
-                        if (data.order_type === 'trip') {
-                            document.querySelector('.update_notification_text').textContent = "{{translate('messages.You have new trip, Check Please.')}}";
-                            is_trip = true;
-                        }
-
-                        if (data.new_pending_order > 0) {
-                            order_type = 'pending';
+                        // Handle cancelled order notification (manual mode)
+                        if (data.new_cancelled_order > 0 && data.cancelled_order_id) {
+                            let cancelledOrderId = data.cancelled_order_id;
+                            
+                            // Mark order as checked to prevent repeated notifications
+                            $.get(baseUrl + '/vendor-panel/mark-order-checked/' + cancelledOrderId, function(response) {
+                                if (response.success) {
+                                    console.log('Vendor: Order #' + cancelledOrderId + ' marked as checked');
+                                }
+                            });
+                            
+                            document.querySelector('.update_notification_text').innerHTML = '<i class="tio-remove-circle text-danger"></i> {{translate('messages.Order Cancelled')}}';
+                            document.querySelector('.order-number-container')?.classList.remove('d-none');
+                            
+                            let orderNumberLink = document.querySelector('.order-number-link');
+                            if (orderNumberLink) {
+                                orderNumberLink.textContent = '#' + cancelledOrderId;
+                                orderNumberLink.href = baseUrl + '/vendor-panel/order/details/' + cancelledOrderId;
+                                
+                                orderNumberLink.onclick = function(e) {
+                                    e.preventDefault();
+                                    let printWindow = window.open(baseUrl + '/vendor-panel/order/generate-invoice/' + cancelledOrderId, '_blank');
+                                    setTimeout(function() {
+                                        window.open(baseUrl + '/vendor-panel/order/details/' + cancelledOrderId, '_blank');
+                                    }, 500);
+                                    $('#popup-modal').modal('hide');
+                                };
+                            }
+                            
+                            document.querySelector('.check-order').textContent = "{{translate('messages.Close')}}";
                             playAudio();
                             $('#popup-modal').appendTo("body").modal('show');
+                            return;
                         }
-                        else if (data.new_confirmed_order > 0) {
-                            order_type = 'confirmed';
+
+                        // Handle new order notification (manual mode)
+                        if (data.new_pending_order > 0 || data.new_confirmed_order > 0) {
+                            let orderId = data.order_id;
+                            
+                            if (data.order_type === 'trip') {
+                                document.querySelector('.update_notification_text').textContent = "{{translate('messages.You have new trip, Check Please.')}}";
+                                is_trip = true;
+                            } else {
+                                document.querySelector('.update_notification_text').innerHTML = '<i class="tio-shopping-cart-outlined"></i> {{translate('messages.You have new order, Check Please.')}}';
+                                is_trip = false;
+                            }
+                            
+                            // Show order number if available
+                            let orderNumberContainer = document.querySelector('.order-number-container');
+                            let orderNumberLink = document.querySelector('.order-number-link');
+                            if (orderId && orderNumberContainer && orderNumberLink) {
+                                orderNumberContainer.classList.remove('d-none');
+                                orderNumberLink.textContent = '#' + orderId;
+                                orderNumberLink.href = baseUrl + '/vendor-panel/order/details/' + orderId;
+                                
+                                // Click handler for order number link
+                                orderNumberLink.onclick = function(e) {
+                                    e.preventDefault();
+                                    window.open(baseUrl + '/vendor-panel/order/details/' + orderId, '_blank');
+                                    $('#popup-modal').modal('hide');
+                                };
+                            } else if (orderNumberContainer) {
+                                orderNumberContainer.classList.add('d-none');
+                            }
+                            
+                            // Update button text and store order ID
+                            let checkOrderBtn = document.querySelector('.check-order');
+                            checkOrderBtn.textContent = "{{translate('messages.Ok, let me check')}}";
+                            checkOrderBtn.setAttribute('data-order-id', orderId || '');
+                            
+                            if (data.new_pending_order > 0) {
+                                order_type = 'pending';
+                            } else if (data.new_confirmed_order > 0) {
+                                order_type = 'confirmed';
+                            }
+                            
                             playAudio();
                             $('#popup-modal').appendTo("body").modal('show');
                         }
@@ -673,14 +816,52 @@ $verifiedBadgePopupLabel = isset($moduleType) && $moduleType == 'rental' ? trans
             @endif
 
         $('.check-order').on('click', function () {
+            // If this is a cancellation notification, just close the modal
+            if ($('.order-number-container').is(':visible') && $(this).text().trim() === "{{translate('messages.Close')}}") {
+                $('#popup-modal').modal('hide');
+                // Reset popup state for next notification
+                setTimeout(function() {
+                    document.querySelector('.update_notification_text').innerHTML = '<i class="tio-shopping-cart-outlined"></i> {{translate('messages.You have new order, Check Please.')}}';
+                    document.querySelector('.order-number-container').classList.add('d-none');
+                    document.querySelector('.check-order').textContent = "{{translate('messages.Ok, let me check')}}";
+                    document.querySelector('.check-order').removeAttribute('data-order-id');
+                }, 300);
+                return;
+            }
+            
+            // Get stored order ID
+            let orderId = $(this).attr('data-order-id');
+            let targetUrl = '';
+            
             if (order_type) {
                 if (is_trip === true) {
-                    location.href = '{{url('/')}}/vendor-panel/trip?status=all';
+                    targetUrl = '{{url('/')}}/vendor-panel/trip?status=all';
                 } else {
-                    location.href = '{{url('/')}}/vendor-panel/order/list/' + order_type;
-
+                    targetUrl = '{{url('/')}}/vendor-panel/order/list/' + order_type;
                 }
             }
+            
+            // Confirm the order if orderId exists (for non-trip orders)
+            if (orderId && orderId !== '' && !is_trip) {
+                // Call API to confirm order status
+                $.ajax({
+                    url: baseUrl + '/vendor-panel/confirm-order-notification/' + orderId,
+                    type: 'GET',
+                    dataType: 'json',
+                    success: function(response) {
+                        console.log('Vendor: Order confirmation response:', response);
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('Vendor: Order confirmation failed:', error);
+                    }
+                });
+                
+                // Open print invoice
+                let printWindow = window.open(baseUrl + '/vendor-panel/order/generate-invoice/' + orderId, '_blank');
+            }
+            
+            // Navigate to orders page
+            window.location.href = targetUrl;
         });
         startFCM();
         conversationList();

@@ -18,29 +18,142 @@ class SystemController extends Controller
 
     public function store_data()
     {
+        // Check for cancelled orders first (higher priority)
+        $cancelled_order = Order::where(['checked' => 0])
+            ->where('order_status', 'canceled')
+            ->latest()
+            ->first(['id', 'module_id', 'order_type', 'zone_id']);
+
+        if ($cancelled_order) {
+            return response()->json([
+                'success' => 1,
+                'data' => [
+                    'new_order' => 0,
+                    'new_cancelled_order' => 1,
+                    'cancelled_order_id' => $cancelled_order->id,
+                    'type' => $cancelled_order->order_type ?? 'store_order',
+                    'module_id' => $cancelled_order->module_id ?? 0,
+                    'zone_id' => $cancelled_order->zone_id ?? 0,
+                ]
+            ]);
+        }
+
+        $new_order = 0;
+        $type = 'store_order';
+        $module_id = 0;
+        $order_id = null;
+
         if(Order::StoreOrder()->where(['checked' => 0])->count() > 0 ){
-            $new_order =1;
-            $type='store_order';
-            $module_id=  Order::StoreOrder()->where(['checked' => 0])->latest()->first(['module_id'])->module_id;
+            $new_order = 1;
+            $type = 'store_order';
+            $latestOrder = Order::StoreOrder()->where(['checked' => 0])->latest()->first(['id', 'module_id']);
+            $module_id = $latestOrder->module_id ?? 0;
+            $order_id = $latestOrder->id ?? null;
         }
         elseif(Order::ParcelOrder()->where(['checked' => 0])->count() > 0 ){
-            $new_order =1;
-            $type='parcel';
-            $module_id= Order::ParcelOrder()->where(['checked' => 0])->latest()->first('module_id')->module_id;
+            $new_order = 1;
+            $type = 'parcel';
+            $latestOrder = Order::ParcelOrder()->where(['checked' => 0])->latest()->first(['id', 'module_id']);
+            $module_id = $latestOrder->module_id ?? 0;
+            $order_id = $latestOrder->id ?? null;
         }
-        elseif(addon_published_status('Rental') &&  Trips::where(['checked' => 0])->count() > 0 ){
-            $new_order =1;
-            $type='trip';
-            $module_id=Trips::where(['checked' => 0])->latest()->first(['module_id'])->module_id;
+        elseif(addon_published_status('Rental') && Trips::where(['checked' => 0])->count() > 0 ){
+            $new_order = 1;
+            $type = 'trip';
+            $latestOrder = Trips::where(['checked' => 0])->latest()->first(['id', 'module_id']);
+            $module_id = $latestOrder->module_id ?? 0;
+            $order_id = $latestOrder->id ?? null;
         }
 
         return response()->json([
             'success' => 1,
-            'data' => ['new_order' => $new_order ?? 0,
-                        'type' => $type ?? 'store_order',
-                        'module_id' => $module_id ?? 0
-                ]
+            'data' => [
+                'new_order' => $new_order,
+                'type' => $type,
+                'module_id' => $module_id,
+                'order_id' => $order_id,
+            ]
         ]);
+    }
+
+    public function markOrderChecked($id)
+    {
+        Order::where('id', $id)->update(['checked' => 1]);
+        return response()->json(['success' => true]);
+    }
+
+    /**
+     * Confirm an order from notification popup
+     * Changes order status from pending to confirmed
+     */
+    public function confirmOrderFromNotification($id)
+    {
+        try {
+            $order = Order::find($id);
+            
+            if (!$order) {
+                return response()->json(['success' => false, 'message' => 'Order not found'], 404);
+            }
+            
+            // Only confirm if order is in pending status
+            if ($order->order_status !== 'pending') {
+                return response()->json([
+                    'success' => true, 
+                    'message' => 'Order already ' . $order->order_status,
+                    'order_status' => $order->order_status
+                ]);
+            }
+            
+            // Update order status to confirmed
+            $order->order_status = 'confirmed';
+            $order->confirmed = now();
+            $order->checked = 1;
+            $order->save();
+            
+            // Send notification to customer
+            $fcm_token = $order->is_guest == 0 ? $order?->customer?->cm_firebase_token : $order?->guest?->fcm_token;
+            $value = Helpers::order_status_update_message('confirmed', $order->module?->module_type, $order->customer?->current_language_key ?? 'en');
+            $value = Helpers::text_variable_data_format(
+                value: $value,
+                store_name: $order->store?->name,
+                order_id: $order->id,
+                user_name: "{$order?->customer?->f_name} {$order?->customer?->l_name}",
+                delivery_man_name: "{$order->delivery_man?->f_name} {$order->delivery_man?->l_name}"
+            );
+            
+            try {
+                if ($value && Helpers::getNotificationStatusData('customer', 'customer_order_notification', 'push_notification_status') && $fcm_token) {
+                    $data = [
+                        'title' => translate('Order_Notification'),
+                        'description' => $value,
+                        'order_id' => $order->id,
+                        'image' => '',
+                        'type' => 'order_status'
+                    ];
+                    Helpers::send_push_notif_to_device($fcm_token, $data);
+                    DB::table('user_notifications')->insert([
+                        'data' => json_encode($data),
+                        'user_id' => $order?->customer?->id,
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ]);
+                }
+            } catch (\Exception $e) {
+                info($e->getMessage());
+            }
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Order confirmed successfully',
+                'order_status' => 'confirmed'
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function settings()

@@ -781,14 +781,7 @@ trait PlaceNewOrder
                     ];
                 }
             } else {
-                $store = Store::with(['discount', 'store_sub'])
-                    ->selectRaw('*, IF(((select count(*) from `store_schedule` where `stores`.`id` = `store_schedule`.`store_id` and `store_schedule`.`day` = ? and `store_schedule`.`opening_time` < ? and `store_schedule`.`closing_time` > ?) > 0), true, false) as open', [
-                        $schedule_at->format('w'),
-                        $schedule_at->format('H:i:s'),
-                        $schedule_at->format('H:i:s')
-                    ])
-                    ->where('id', $request->store_id)
-                    ->first();
+                $store = Store::with(['discount', 'store_sub'])->selectRaw('*, IF(((select count(*) from `store_schedule` where `stores`.`id` = `store_schedule`.`store_id` and `store_schedule`.`day` = ' . $schedule_at->format('w') . ' and `store_schedule`.`opening_time` < "' . $schedule_at->format('H:i:s') . '" and `store_schedule`.`closing_time` >"' . $schedule_at->format('H:i:s') . '") > 0), true, false) as open')->where('id', $request->store_id)->first();
                 if ($store) {
                     $zone = Zone::where('id', $store->zone_id)->whereContains('coordinates', new Point($request->latitude, $request->longitude, POINT_SRID))->first();
                 }
@@ -1139,33 +1132,35 @@ trait PlaceNewOrder
 
                 $discount_type = $product_discount['discount_type'];
 
-                $or_d = [
-                    'item_id' => $isCampaign ?  null : $c['item_id'],
-                    'item_campaign_id' => $isCampaign ? $c['item_id'] : null,
-                    'item_details' => json_encode($product),
-                    'quantity' => $c['quantity'],
-                    'price' => round($price, config('round_up_to_digit')),
+                    $or_d = [
+                        'item_id' => $isCampaign ?  null : $c['item_id'],
+                        'item_campaign_id' => $isCampaign ? $c['item_id'] : null,
+                        'item_details' => json_encode($product),
+                        'quantity' => $c['quantity'],
+                        'price' => round($price, config('round_up_to_digit')),
 
-                    'category_id' => collect(is_string($product->category_ids) ? json_decode($product->category_ids, true) : $product->category_ids)->firstWhere('position', 1)['id'] ?? null,
-                    // 'tax_amount' => round(Helpers::tax_calculate($product, $price), config('round_up_to_digit')),
-                    'tax_amount' => 0,
-                    'tax_status' => null,
+                        'category_id' => collect(is_string($product->category_ids) ? json_decode($product->category_ids, true) : $product->category_ids)->firstWhere('position', 1)['id'] ?? null,
+                        // 'tax_amount' => round(Helpers::tax_calculate($product, $price), config('round_up_to_digit')),
+                        'tax_amount' => 0,
+                        'tax_status' => null,
 
-                    'discount_on_product_by' => $product_discount['discount_type'],
-                    'discount_type' => $product_discount['discount_type'],
-                    'discount_on_item' => $product_discount['discount_amount'],
-                    'discount_percentage' => $product_discount['discount_percentage'],
+                        'discount_on_product_by' => $product_discount['discount_type'],
+                        'discount_type' => $product_discount['discount_type'],
+                        'discount_on_item' => $product_discount['discount_amount'],
+                        'discount_percentage' => $product_discount['discount_percentage'],
 
-                    'variant' => json_encode($c['variant']),
-                    'variation' => $foodVariation ? json_encode($variations) : json_encode($c['variation']),
-                    'add_ons' => json_encode($addon_data['addons']),
+                        'variant' => json_encode($c['variant']),
+                        'variation' => $foodVariation ? json_encode($variations) : json_encode($c['variation']),
+                        'add_ons' => json_encode($addon_data['addons']),
 
-                    'total_add_on_price' => round($addon_data['total_add_on_price'], config('round_up_to_digit')),
-                    'addon_discount' => 0,
+                        'total_add_on_price' => round($addon_data['total_add_on_price'], config('round_up_to_digit')),
+                        'addon_discount' => 0,
 
-                    'created_at' => now(),
-                    'updated_at' => now()
-                ];
+                        'note' => $c['note'] ?? null,
+
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ];
 
 
                 $total_addon_price += $or_d['total_add_on_price'];
@@ -1337,6 +1332,8 @@ trait PlaceNewOrder
 
                         'total_add_on_price' => round($addon_data['total_add_on_price'], config('round_up_to_digit')),
                         'addon_discount' => 0,
+
+                        'note' => $c['note'] ?? null,
 
                         'created_at' => now(),
                         'updated_at' => now()
@@ -1561,6 +1558,8 @@ trait PlaceNewOrder
 
                         'total_add_on_price' => round($addon_data['total_add_on_price'], config('round_up_to_digit')),
                         'addon_discount' => 0,
+
+                        'note' => $c['note'] ?? null,
 
                         'created_at' => now(),
                         'updated_at' => now()

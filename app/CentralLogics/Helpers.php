@@ -1224,6 +1224,7 @@ class Helpers
             $item['add_ons'] = json_decode($item['add_ons']);
             $item['variation'] = json_decode($item['variation'], true);
             $item['item_details'] = json_decode($item['item_details'], true);
+            $item['note'] = $item['note'] ?? null;
             if ($item['item_id']) {
                 $product = \App\Models\Item::where(['id' => $item['item_details']['id']])->first();
                 $item['image_full_url'] = $product?->image_full_url;
@@ -2130,7 +2131,62 @@ class Helpers
                     'type' => 'new_order',
                 ];
 
-                self::send_push_notif_to_topic($data, 'admin_message', 'order_request', url('/') . '/admin/order/list/all');
+                // Log for debugging
+                info('Sending new order notification for order #' . $order->id . ' to admin. Data: ' . json_encode($data));
+
+                $result = self::send_push_notif_to_topic($data, 'admin_message', 'order_request', url('/') . '/admin/order/list/all');
+
+                // Log result
+                info('New order notification result for order #' . $order->id . ': ' . ($result ? 'success' : 'failed'));
+            }
+
+            // Send cancellation notification to admin
+            if ($order->order_status == 'canceled') {
+                $data = [
+                    'title' => translate('Order_Cancelled'),
+                    'description' => translate('Order #') . $order->id . translate(' has been cancelled by customer'),
+                    'order_id' => $order->id,
+                    'image' => '',
+                    'module_id' => $order->module_id,
+                    'order_type' => $order->order_type,
+                    'zone_id' => $order->zone_id,
+                    'type' => 'order_canceled',
+                ];
+
+                // Log for debugging
+                info('Sending cancellation notification for order #' . $order->id . ' to admin. Data: ' . json_encode($data));
+
+                $result = self::send_push_notif_to_topic($data, 'admin_message', 'order_canceled', url('/') . '/admin/order/details/' . $order->id);
+                
+                // Log result
+                info('Cancellation notification result for order #' . $order->id . ': ' . ($result ? 'success' : 'failed'));
+            }
+
+            // Send cancellation notification to vendor/store
+            if ($order->order_status == 'canceled' && $order->store && $order->store->vendor && $push_notification_status) {
+                $data = [
+                    'title' => translate('Order_Cancelled'),
+                    'description' => translate('Order #') . $order->id . translate(' has been cancelled by customer'),
+                    'order_id' => $order->id,
+                    'image' => '',
+                    'module_id' => $order->module_id,
+                    'order_type' => $order->order_type,
+                    'zone_id' => $order->zone_id,
+                    'type' => 'order_canceled',
+                ];
+
+                self::send_push_notif_to_device($order->store->vendor->firebase_token, $data);
+                $web_push_link = url('/') . '/vendor-panel/order/details/' . $order->id;
+                self::send_push_notif_to_topic($data, "store_panel_{$order->store_id}_message", 'order_canceled', $web_push_link);
+                
+                DB::table('user_notifications')->insert([
+                    'data' => json_encode($data),
+                    'vendor_id' => $order->store->vendor_id,
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+
+                self::sendStoreEmployeeNotification($order, $data);
             }
 
             $status = ($order->order_status == 'delivered' && $order->delivery_man) ? 'delivery_boy_delivered' : $order->order_status;

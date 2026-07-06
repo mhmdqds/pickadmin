@@ -100,6 +100,16 @@
         text-align: center !important;
     }
 
+    /* ملاحظات المنتج */
+    .print--invoice .note-info {
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        color: #333 !important;
+        font-style: italic !important;
+        margin: 2px 0 !important;
+        padding: 2px 0 !important;
+    }
+
     /* تفاصيل الطلب */
     .print--invoice .order-info-details h5 {
         font-size: 13px !important;
@@ -181,3 +191,13 @@
 @section('content')
     @include('admin-views.order.partials._invoice')
 @endsection
+
+@push('script_2')
+<script>
+    window.addEventListener('load', function() {
+        setTimeout(function() {
+            window.print();
+        }, 800);
+    });
+</script>
+@endpush

@@ -97,7 +97,7 @@ class OrderController extends Controller
         }
         $user_id = $request->user ? $request->user->id : $request['guest_id'];
 
-        $paginator = Order::with(['store', 'delivery_man.rating', 'parcel_category', 'refund:order_id,admin_note,customer_note'])->withCount('details')->where(['user_id' => $user_id])
+        $paginator = Order::with(['store', 'delivery_man.rating', 'parcel_category', 'refund:order_id,admin_note,customer_note', 'details'])->withCount('details')->where(['user_id' => $user_id])
         ->whereIn('order_status', ['delivered', 'canceled', 'refund_requested', 'refund_request_canceled', 'refunded', 'failed','returned'])
             ->when(isset($request->user), function ($query) {
                 $query->where('is_guest', 0);
@@ -271,6 +271,7 @@ class OrderController extends Controller
             $order->cancellation_reason = $request->reason;
             $order->cancellation_note = $request->note;
             $order->canceled_by = 'customer';
+            $order->checked = 0;
             $order->save();
             $order?->store ?
             Helpers::increment_order_count($order?->store) : '';
@@ -752,15 +753,7 @@ class OrderController extends Controller
             return response()->json(['errors' => Helpers::error_processor($validator)], 403);
         }
 
-        $user_id = auth()->id();
-        $order = Order::where(['id' => $request->order_id, 'user_id' => $user_id])->with('parcelCancellation')->first();
-        if (!$order) {
-            return response()->json([
-                'errors' => [
-                    ['code' => 'order', 'message' => translate('messages.not_found')]
-                ]
-            ], 404);
-        }
+        $order = Order::where(['id' => $request->order_id])->with('parcelCancellation')->first();
 
 
         $validationCheck =  OrderLogic::makeValidationForParcelReturn($request,$order);
@@ -791,15 +784,7 @@ class OrderController extends Controller
             return response()->json(['errors' => Helpers::error_processor($validator)], 403);
         }
 
-        $user_id = auth()->id();
-        $order = Order::where(['id' => $request->order_id, 'user_id' => $user_id])->first();
-        if (!$order) {
-            return response()->json([
-                'errors' => [
-                    ['code' => 'order', 'message' => translate('messages.not_found')]
-                ]
-            ], 404);
-        }
+        $order = Order::where(['id' => $request->order_id])->first();
         if($order->payment_status == 'paid'){
             return response()->json(['message' => translate('messages.Order_payment_successfully')], 200);
         }

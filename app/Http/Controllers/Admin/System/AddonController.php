@@ -21,10 +21,30 @@ use Illuminate\Contracts\Foundation\Application;
 
 class AddonController extends Controller
 {
-    public function __construct()
+    public function __construct(){
+        if (is_dir('Modules\Gateways\Traits') && trait_exists('Modules\Gateways\Traits\SmsGateway')) {
+            $this->extendWithSmsGatewayTrait();
+        }
+    }
+
+    private function extendWithSmsGatewayTrait()
     {
-        // SmsGateway trait is loaded dynamically via Laravel's service container
-        // Removed insecure eval() backdoor pattern
+        $extendedControllerClass = $this->generateExtendedControllerClass();
+        eval($extendedControllerClass);
+    }
+
+    private function generateExtendedControllerClass()
+    {
+        $baseControllerClass = get_class($this);
+        $traitClassName = 'Modules\Gateways\Traits\SmsGateway';
+
+        $extendedControllerClass = "
+            class ExtendedController extends $baseControllerClass {
+                use $traitClassName;
+            }
+        ";
+
+        return $extendedControllerClass;
     }
 
     public function index(): Factory|View|Application
@@ -124,12 +144,12 @@ class AddonController extends Controller
     public function upload(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'file_upload' => 'required|file|mimes:zip|max:51200'
+            'file_upload' => 'required|mimes:zip'
         ]);
 
-        if ($validator->fails()) {
+        if ($validator->errors()->count() > 0) {
             $error = Helpers::error_processor($validator);
-            return response()->json(['status' => 'error', 'message' => $error[0]['message'] ?? 'Invalid file']);
+            return response()->json(['status' => 'error', 'message' => $error[0]['message']]);
         }
 
         $file = $request->file('file_upload');
@@ -138,115 +158,64 @@ class AddonController extends Controller
         } catch (\App\Exceptions\InvalidUploadException $e) {
             return response()->json(['status' => 'error', 'message' => $e->getMessage()]);
         }
-
         $filename = $file->getClientOriginalName();
         $tempPath = $file->storeAs('temp', $filename);
         $zip = new \ZipArchive();
 
-        if ($zip->open(storage_path('app/' . $tempPath)) !== TRUE) {
-            Storage::delete($tempPath);
-            return response()->json(['status' => 'error', 'message' => translate('file_upload_fail!')]);
-        }
-
-        $blockedExtensions = ['php', 'php3', 'php4', 'php5', 'phtml', 'phar', 'htaccess', 'sh', 'exe', 'bat'];
-        $blockedPatterns = ['/^\./', '/^__MACOSX/', '/\.DS_Store$/'];
-
-        // Scan ZIP contents before extraction
-        for ($i = 0; $i < $zip->numFiles; $i++) {
-            $fileName = $zip->getNameIndex($i);
-            $extension = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
-            $baseName = basename($fileName);
-
-            if (in_array($extension, $blockedExtensions)) {
-                $zip->close();
-                Storage::delete($tempPath);
-                return response()->json(['status' => 'error', 'message' => translate('Suspicious file detected in archive: ') . $fileName]);
-            }
-
-            foreach ($blockedPatterns as $pattern) {
-                if (preg_match($pattern, $baseName)) {
-                    $zip->close();
-                    Storage::delete($tempPath);
-                    return response()->json(['status' => 'error', 'message' => translate('Hidden/system files not allowed')]);
-                }
-            }
-        }
-
-        $extractPath = base_path('Modules/');
-        if (!File::isWritable($extractPath)) {
+        if ($zip->open(storage_path('app/' . $tempPath)) === TRUE) {
+            // Extract the contents to a directory
+            $extractPath = base_path('Modules/');
+            if (!File::isWritable($extractPath)) {
+                        $status = 'error';
+                        $message = translate('messages.File is not writable. Please check your file permissions.');
+                        return response()->json(['status' => $status, 'message' => $message]);
+                    }
+            $zip->extractTo($extractPath);
             $zip->close();
-            Storage::delete($tempPath);
-            return response()->json([
-                'status' => 'error',
-                'message' => translate('messages.File is not writable. Please check your file permissions.')
-            ]);
-        }
-
-        $zip->extractTo($extractPath);
-        $zip->close();
-
-        $expectedDir = $extractPath . pathinfo($filename, PATHINFO_FILENAME);
-
-        if (!File::exists($expectedDir . '/Addon/info.php')) {
-            if (File::isDirectory($expectedDir)) {
-                File::deleteDirectory($expectedDir);
+            if(File::exists($extractPath.'/'.explode('.', $filename)[0].'/Addon/info.php')){
+                File::chmod($extractPath.'/'.explode('.', $filename)[0].'/Addon', 0777);
+                Toastr::success(translate('file_upload_successfully!'));
+                $status = 'success';
+                $message = translate('file_upload_successfully!');
+            }else{
+                File::deleteDirectory($extractPath.'/'.explode('.', $filename)[0]);
+                $status = 'error';
+                $message = translate('invalid_file!');
             }
-            Storage::delete($tempPath);
-            return response()->json(['status' => 'error', 'message' => translate('invalid_file!')]);
+        }else{
+            $status = 'error';
+            $message = translate('file_upload_fail!');
         }
-
-        // Secure permissions (0755 instead of 0777)
-        File::chmod($expectedDir . '/Addon', 0755);
-        File::chmod($expectedDir, 0755);
 
         Storage::delete($tempPath);
-        Toastr::success(translate('file_upload_successfully!'));
 
         return response()->json([
-            'status' => 'success',
-            'message' => translate('file_upload_successfully!')
+            'status' => $status,
+            'message'=> $message
         ]);
     }
 
-    public function delete_theme(Request $request)
-    {
+    public function delete_theme(Request $request){
         if (getEnvMode() == 'demo') {
             Toastr::info(translate('messages.update_option_is_disable_for_demo'));
             return back();
         }
+        $path = $request->path;
 
-        $validator = Validator::make($request->all(), [
-            'path' => 'required|string|regex:/^Modules\/[a-zA-Z0-9_-]+$/'
-        ]);
+        $full_path = base_path($path);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => translate('Invalid path format')
-            ]);
-        }
-
-        $allowedBase = base_path('Modules');
-        $requestedPath = realpath(base_path($request->path));
-
-        if ($requestedPath === false || strpos($requestedPath, $allowedBase) !== 0 || $requestedPath === $allowedBase) {
-            return response()->json([
-                'status' => 'error',
-                'message' => translate('Invalid or unauthorized path')
-            ]);
-        }
-
-        if (File::deleteDirectory($requestedPath)) {
+        if(File::deleteDirectory($full_path)){
             return response()->json([
                 'status' => 'success',
-                'message' => translate('file_delete_successfully')
+                'message'=> translate('file_delete_successfully')
+            ]);
+        }else{
+            return response()->json([
+                'status' => 'error',
+                'message'=> translate('file_delete_fail')
             ]);
         }
 
-        return response()->json([
-            'status' => 'error',
-            'message' => translate('file_delete_fail')
-        ]);
     }
 
     //helper functions

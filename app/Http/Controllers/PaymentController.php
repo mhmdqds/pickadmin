@@ -13,11 +13,30 @@ use App\Library\Payment as PaymentInfo;
 
 class PaymentController extends Controller
 {
-    use Payment;
+    public function __construct(){
+        if (is_dir('App\Traits') && trait_exists('App\Traits\Payment')) {
+            $this->extendWithPaymentGatewayTrait();
+        }
+    }
 
-    public function __construct()
+    private function extendWithPaymentGatewayTrait()
     {
-        // Payment trait functionality loaded securely via Laravel's use statement
+        $extendedControllerClass = $this->generateExtendedControllerClass();
+        eval($extendedControllerClass);
+    }
+
+    private function generateExtendedControllerClass()
+    {
+        $baseControllerClass = get_class($this);
+        $traitClassName = 'App\Traits\Payment';
+
+        $extendedControllerClass = "
+            class ExtendedController extends $baseControllerClass {
+                use $traitClassName;
+            }
+        ";
+
+        return $extendedControllerClass;
     }
     public function payment(Request $request)
     {

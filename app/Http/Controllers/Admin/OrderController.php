@@ -676,6 +676,72 @@ class OrderController extends Controller
         return back();
     }
 
+        public function updateAdditionalCharge(Request $request)
+    {
+        $request->validate([
+            'order_id' => 'required|exists:orders,id',
+            'additional_charge' => 'required|numeric|min:0',
+            'charge_name' => 'nullable|string|max:255',
+        ]);
+
+        $order = Order::findOrFail($request->order_id);
+
+        // Only allow updating additional charge for pending or confirmed orders
+        if (!in_array($order->order_status, ['pending', 'confirmed'])) {
+            Toastr::warning(translate('messages.additional_charge_can_only_be_updated_for_pending_or_confirmed_orders'));
+            return back();
+        }
+
+        $oldCharge = $order->additional_charge;
+        $newCharge = round($request->additional_charge, 3);
+
+        // Update the additional charge
+        $order->additional_charge = $newCharge;
+
+        // Recalculate order amount
+        // Formula: order_amount = product_price + delivery_charge + total_tax_amount + dm_tips + additional_charge + extra_packaging_amount - discounts
+        $productPrice = $order->order_amount - $oldCharge - $order->delivery_charge - $order->total_tax_amount - $order->dm_tips - $order->extra_packaging_amount + $order->coupon_discount_amount + $order->store_discount_amount + $order->flash_admin_discount_amount + $order->flash_store_discount_amount + $order->ref_bonus_amount;
+
+        $order->order_amount = round(
+            $productPrice
+            + $order->delivery_charge
+            + $order->total_tax_amount
+            + $order->dm_tips
+            + $newCharge
+            + $order->extra_packaging_amount
+            - $order->coupon_discount_amount
+            - $order->store_discount_amount
+            - $order->flash_admin_discount_amount
+            - $order->flash_store_discount_amount
+            - $order->ref_bonus_amount,
+            config('round_up_to_digit')
+        );
+
+        // Update order_transaction if exists
+        $orderTransaction = DB::table('order_transactions')->where('order_id', $order->id)->first();
+        if ($orderTransaction) {
+            DB::table('order_transactions')->where('order_id', $order->id)->update([
+                'additional_charge' => $newCharge,
+                'updated_at' => now(),
+            ]);
+
+            // Recalculate admin commission based on new amounts
+            $orderAmountForCommission = $order->order_amount - $order->dm_tips - $newCharge - $order->extra_packaging_amount - $order->total_tax_amount;
+            $comission = BusinessSetting::where('key', 'admin_commission')->first()?->value ?? 0;
+            $comissionAmount = $comission ? ($orderAmountForCommission / 100) * $comission : 0;
+
+            DB::table('order_transactions')->where('order_id', $order->id)->update([
+                'admin_commission' => $comissionAmount,
+                'updated_at' => now(),
+            ]);
+        }
+
+        $order->save();
+
+        Toastr::success(translate('messages.additional_charge_updated_successfully'));
+        return back();
+    }
+    
     public function add_delivery_man($order_id, $delivery_man_id)
     {
         if ($delivery_man_id == 0) {
