@@ -233,7 +233,7 @@
                     }
 
                     if (module_data.veg_non_veg) {
-                        $('#veg_input').show();
+                        $('#veg_input').hide();
                     } else {
                         $('#veg_input').hide();
                     }

@@ -215,9 +215,12 @@
             strokeOpacity: 0.8,
             strokeWeight: 2,
             fillOpacity: 0,
+            editable: true,
+            draggable: true
         });
 
         zonePolygon.setMap(map);
+        lastpolygon = zonePolygon;
 
         zonePolygon.getPaths().forEach(function(path) {
             path.forEach(function(latlng) {
@@ -226,9 +229,18 @@
             });
         });
 
+        // Update hidden coordinates field whenever the user edits a vertex
+        const updateZoneCoordinates = function() {
+            $('#coordinates').val(zonePolygon.getPath().getArray());
+            auto_grow();
+        };
+        google.maps.event.addListener(zonePolygon.getPath(), 'set_at', updateZoneCoordinates);
+        google.maps.event.addListener(zonePolygon.getPath(), 'insert_at', updateZoneCoordinates);
+        google.maps.event.addListener(zonePolygon.getPath(), 'remove_at', updateZoneCoordinates);
+
 
         drawingManager = new google.maps.drawing.DrawingManager({
-            drawingMode: google.maps.drawing.OverlayType.POLYGON,
+            drawingMode: null,
             drawingControl: true,
             drawingControlOptions: {
             position: google.maps.ControlPosition.TOP_CENTER,
@@ -249,6 +261,10 @@
             if(lastpolygon)
                 {
                     lastpolygon.setMap(null);
+                }
+                if(zonePolygon)
+                {
+                    zonePolygon.setMap(null);
                 }
                 $('#coordinates').val(event.overlay.getPath().getArray());
                 lastpolygon = event.overlay;

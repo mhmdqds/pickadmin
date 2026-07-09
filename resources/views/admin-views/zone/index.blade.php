@@ -449,7 +449,7 @@
             drawingMode: google.maps.drawing.OverlayType.POLYGON,
             drawingControl: true,
             drawingControlOptions: {
-                position: google.maps.ControlPosition.TOP_CENTER,
+                position: google.maps.ControlPosition.TOP_LEFT,
                 drawingModes: [google.maps.drawing.OverlayType.POLYGON]
             },
             polygonOptions: {
@@ -484,7 +484,7 @@
 
         const resetDiv = document.createElement("div");
         resetMap(resetDiv, lastpolygon);
-        map.controls[google.maps.ControlPosition.TOP_CENTER].push(resetDiv);
+        map.controls[google.maps.ControlPosition.RIGHT_TOP].push(resetDiv);
 
         // Create the search box and link it to the UI element.
         const input = document.getElementById("pac-input");
