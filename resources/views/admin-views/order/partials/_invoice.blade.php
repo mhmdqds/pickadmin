@@ -312,6 +312,11 @@
                             </dt>
                             <dd class="col-6 total">
                                 {{ \App\CentralLogics\Helpers::format_currency($order->order_amount) }}</dd>
+                            @php($order_type_translation_key = $order->order_type == 'delivery' ? 'home_delivery' : $order->order_type)
+                            <dt class="col-6 text-left">{{ translate('messages.order_type') }} :</dt>
+                            <dd class="col-6 text-left">
+                                {{ translate('messages.' . $order_type_translation_key) }}
+                            </dd>
                             @if ($order?->payments)
                                 @foreach ($order?->payments as $payment)
                                     @if ($payment->payment_status == 'paid')
