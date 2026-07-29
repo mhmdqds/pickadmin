@@ -258,11 +258,11 @@ class VendorController extends Controller
         ->where(function($query)use($vendor){
             if(config('order_confirmation_model') == 'store' || $vendor->stores[0]->sub_self_delivery)
             {
-                $query->whereIn('order_status', ['accepted','pending','confirmed', 'processing', 'handover','picked_up']);
+                $query->whereIn('order_status', ['accepted','pending','confirmed', 'processing', 'handover','picked_up','canceled']);
             }
             else
             {
-                $query->whereIn('order_status', ['confirmed', 'processing', 'handover','picked_up'])
+                $query->whereIn('order_status', ['confirmed', 'processing', 'handover','picked_up', 'canceled'])
                 ->orWhere(function($query){
                     $query->whereNotNull('confirmed')->where('order_status', 'accepted');
                 })
@@ -288,7 +288,7 @@ class VendorController extends Controller
         $validator = Validator::make($request->all(), [
             'limit' => 'required',
             'offset' => 'required',
-            'status' => 'required|in:all,refunded,delivered',
+            'status' => 'required|in:all,refunded,delivered,canceled',
         ]);
 
         if ($validator->fails()) {
@@ -302,7 +302,7 @@ class VendorController extends Controller
         })
         ->with('customer')
         ->when($request->status == 'all', function($query){
-            return $query->whereIn('order_status', ['refunded', 'delivered']);
+            return $query->whereIn('order_status', ['refunded', 'delivered', 'canceled']);
         })
         ->when($request->status != 'all', function($query)use($request){
             return $query->where('order_status', $request->status);

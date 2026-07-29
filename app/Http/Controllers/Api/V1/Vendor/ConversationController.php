@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Vendor;
 
 use App\CentralLogics\Helpers;
+use App\Http\Controllers\Api\V1\ConversationController as ApiV1ConversationController;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\DeliveryMan;
@@ -154,6 +155,33 @@ class ConversationController extends Controller
 
         } catch (\Exception $e) {
             info($e->getMessage());
+        }
+
+        /*
+         * Reverse synchronization:
+         *  When the vendor replies to a customer, mirror the same
+         *  message into the Customer ↔ Admin conversation so the
+         *  admin is kept in the loop. Only customer ↔ vendor (and
+         *  vendor ↔ customer) threads are synchronised.
+         *  Admin replies are NOT mirrored (handled on the admin side).
+         */
+        try {
+            if (
+                isset($message) && $message->exists
+                && (
+                    ($conversation->sender_type === 'vendor' && $conversation->receiver_type === 'customer')
+                    || ($conversation->sender_type === 'customer' && $conversation->receiver_type === 'vendor')
+                )
+            ) {
+                /** @var ApiV1ConversationController $customerConvController */
+                $customerConvController = app(ApiV1ConversationController::class);
+                $customerConvController->mirrorVendorReplyToAdminConversation(
+                    $conversation,
+                    $message
+                );
+            }
+        } catch (\Exception $mirrorError) {
+            info('[vendor → admin mirror] ' . $mirrorError->getMessage());
         }
 
         $messages = Message::where(['conversation_id' => $conversation->id])->latest()->paginate($limit, ['*'], 'page', $offset);
