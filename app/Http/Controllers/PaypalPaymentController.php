@@ -34,22 +34,63 @@ class PaypalPaymentController extends Controller
         $this->payment = $payment;
     }
 
-    public function token(){
+    /**
+     * Common cURL options for PayPal API calls.
+     * All PayPal calls MUST verify TLS certificates (CWE-295 fix: M-2).
+     */
+    private function paypalCurlOptions(string $url, string $method = 'GET', array $headers = [], array $body = []): array
+    {
+        $opts = [
+            CURLOPT_URL            => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TIMEOUT        => 30,
+        ];
+        if (strtoupper($method) === 'POST') {
+            $opts[CURLOPT_POST]       = 1;
+            $opts[CURLOPT_POSTFIELDS] = http_build_query($body);
+        } elseif (strtoupper($method) !== 'GET') {
+            $opts[CURLOPT_CUSTOMREQUEST] = strtoupper($method);
+            if (!empty($body)) {
+                $opts[CURLOPT_POSTFIELDS] = json_encode($body);
+            }
+        }
+        if (!empty($headers)) {
+            $opts[CURLOPT_HTTPHEADER] = $headers;
+        }
+        return $opts;
+    }
+
+    private function paypalRequest(string $url, string $method = 'GET', array $headers = [], array $body = [])
+    {
         $ch = curl_init();
+        curl_setopt_array($ch, $this->paypalCurlOptions($url, $method, $headers, $body));
+        $response = curl_exec($ch);
+        $err = curl_error($ch);
+        curl_close($ch);
+        if ($response === false) {
+            return ['error' => 'transport_error', 'detail' => $err];
+        }
+        return json_decode($response, true) ?? ['raw' => $response];
+    }
 
-        curl_setopt($ch, CURLOPT_URL, $this->base_url.'/v1/oauth2/token');
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($ch, CURLOPT_POST, 1);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, "grant_type=client_credentials");
+    public function token()
+    {
+        $ch = curl_init();
+        curl_setopt_array($ch, $this->paypalCurlOptions(
+            $this->base_url . '/v1/oauth2/token',
+            'POST',
+            ['Content-Type: application/x-www-form-urlencoded'],
+            ['grant_type' => 'client_credentials']
+        ));
+        // PayPal OAuth2 token endpoint requires HTTP Basic Auth
         curl_setopt($ch, CURLOPT_USERPWD, $this->config_values->client_id . ':' . $this->config_values->client_secret);
-
-        $headers = array();
-        $headers[] = 'Content-Type: application/x-www-form-urlencoded';
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 
         $accessToken = curl_exec($ch);
         if (curl_errno($ch)) {
-            echo 'Error:' . curl_error($ch);
+            \Log::error('PayPal token error', ['curl_error' => curl_error($ch)]);
         }
         curl_close($ch);
         return $accessToken;
@@ -57,7 +98,6 @@ class PaypalPaymentController extends Controller
 
     /**
      * Responds with a welcome message with instructions
-     *
      */
     public function payment(Request $request)
     {
@@ -81,9 +121,9 @@ class PaypalPaymentController extends Controller
             $business_name = "my_business";
         }
 
-        $accessToken = json_decode($this->token(),true);
+        $accessToken = json_decode($this->token(), true);
 
-        if ( isset($accessToken['access_token'])) {
+        if (isset($accessToken['access_token'])) {
             $accessToken = $accessToken['access_token'];
             $payment_data = [];
             $payment_data['purchase_units'] = [
@@ -93,48 +133,58 @@ class PaypalPaymentController extends Controller
                     'desc'  => 'payment ID :' . $data->id,
                     'amount' => [
                         'currency_code' => 'USD',
-                        'value' => $data->payment_amount*100
+                        'value' => $data->payment_amount * 100
                     ]
                 ]
             ];
 
             $payment_data['invoice_id'] = $data->id;
             $payment_data['invoice_description'] = "Order #{$payment_data['invoice_id']} Invoice";
-            $payment_data['total'] = $data->payment_amount*100;
+            $payment_data['total'] = $data->payment_amount * 100;
             $payment_data['intent'] = 'CAPTURE';
             $payment_data['application_context'] = [
-                'return_url' => route('paypal.success',['payment_id' => $data->id]),
-                'cancel_url' => route('paypal.cancel',['payment_id' => $data->id])
+                'return_url' => route('paypal.success', ['payment_id' => $data->id]),
+                'cancel_url' => route('paypal.cancel', ['payment_id' => $data->id])
             ];
+
+            // Build cURL with TLS verification (CWE-295 / M-2 fix)
             $ch = curl_init();
-
-            curl_setopt($ch, CURLOPT_URL, $this->base_url.'/v2/checkout/orders');
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-            curl_setopt($ch, CURLOPT_POST, 1);
-            curl_setopt($ch, CURLOPT_POSTFIELDS,  json_encode($payment_data));
-
-            $headers = array();
-            $headers[] = 'Content-Type: application/json';
-            $headers[] = "Authorization: Bearer $accessToken";
-            $headers[] = "Paypal-Request-Id:".Str::uuid();
-            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+            curl_setopt_array($ch, $this->paypalCurlOptions(
+                $this->base_url . '/v2/checkout/orders',
+                'POST',
+                [
+                    'Content-Type: application/json',
+                    "Authorization: Bearer $accessToken",
+                    'Paypal-Request-Id:' . Str::uuid(),
+                ],
+                $payment_data
+            ));
+            // Override POST fields to use JSON
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payment_data));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                "Authorization: Bearer $accessToken",
+                'Paypal-Request-Id:' . Str::uuid(),
+            ]);
 
             $response = curl_exec($ch);
             if (curl_errno($ch)) {
-                echo 'Error:' . curl_error($ch);
+                \Log::error('PayPal create-order error', ['curl_error' => curl_error($ch)]);
             }
             curl_close($ch);
-        }else{
+        } else {
             return response()->json($this->response_formatter(GATEWAYS_DEFAULT_204), 200);
         }
 
         $response = json_decode($response);
 
+        if (!isset($response->links) || !is_array($response->links) || count($response->links) < 2) {
+            \Log::error('PayPal create-order returned malformed body', ['body' => $response]);
+            return response()->json($this->response_formatter(GATEWAYS_DEFAULT_204), 200);
+        }
+
         $links = $response->links;
         return Redirect::away($links[1]->href);
-
-        return 0;
-
     }
 
     /**
@@ -143,7 +193,7 @@ class PaypalPaymentController extends Controller
     public function cancel(Request $request)
     {
         $data = $this->payment::where(['id' => $request['payment_id']])->first();
-        return $this->payment_response($data,'cancel');
+        return $this->payment_response($data, 'cancel');
     }
 
     /**
@@ -151,31 +201,30 @@ class PaypalPaymentController extends Controller
      */
     public function success(Request $request)
     {
-
-        $accessToken = json_decode($this->token(),true);
+        $accessToken = json_decode($this->token(), true);
         $accessToken = $accessToken['access_token'];
 
+        // Build cURL with TLS verification (CWE-295 / M-2 fix)
         $ch = curl_init();
-
-        curl_setopt($ch, CURLOPT_URL, $this->base_url."/v2/checkout/orders/{$request->token}/capture");
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($ch, CURLOPT_POST, 1);
-
-        $headers = array();
-        $headers[] = 'Content-Type: application/json';
-        $headers[] = "Authorization: Bearer  $accessToken";
-        $headers[] = 'Paypal-Request-Id:'.Str::uuid();
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt_array($ch, $this->paypalCurlOptions(
+            $this->base_url . "/v2/checkout/orders/{$request->token}/capture",
+            'POST',
+            [
+                'Content-Type: application/json',
+                "Authorization: Bearer  $accessToken",
+                'Paypal-Request-Id:' . Str::uuid(),
+            ]
+        ));
 
         $result = curl_exec($ch);
         if (curl_errno($ch)) {
-            echo 'Error:' . curl_error($ch);
+            \Log::error('PayPal capture error', ['curl_error' => curl_error($ch)]);
         }
         curl_close($ch);
 
         $response = json_decode($result);
 
-        if($response->status === 'COMPLETED'){
+        if (isset($response->status) && $response->status === 'COMPLETED') {
             $this->payment::where(['id' => $request['payment_id']])->update([
                 'payment_method' => 'paypal',
                 'is_paid' => 1,
@@ -188,12 +237,13 @@ class PaypalPaymentController extends Controller
                 call_user_func($data->success_hook, $data);
             }
 
-            return $this->payment_response($data,'success');
+            return $this->payment_response($data, 'success');
         }
+
         $payment_data = $this->payment::where(['id' => $request['payment_id']])->first();
         if (isset($payment_data) && function_exists($payment_data->failure_hook)) {
             call_user_func($payment_data->failure_hook, $payment_data);
         }
-        return $this->payment_response($payment_data,'fail');
+        return $this->payment_response($payment_data, 'fail');
     }
 }

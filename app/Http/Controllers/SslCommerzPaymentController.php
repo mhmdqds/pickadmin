@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use Illuminate\Routing\Redirector;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use App\Traits\Processor;
 use Illuminate\Contracts\Foundation\Application;
@@ -20,7 +21,6 @@ class SslCommerzPaymentController extends Controller
 
     private $store_id;
     private $store_password;
-    private bool $host;
     private string $direct_api_url;
     private PaymentRequest $payment;
     private $user;
@@ -38,17 +38,36 @@ class SslCommerzPaymentController extends Controller
             $this->store_id = $values->store_id;
             $this->store_password = $values->store_password;
 
-            # REQUEST SEND TO SSLCOMMERZ
+            // REQUEST SEND TO SSLCOMMERZ
             $this->direct_api_url = "https://sandbox.sslcommerz.com/gwprocess/v4/api.php";
-            $this->host = true;
 
             if ($config->mode == 'live') {
                 $this->direct_api_url = "https://securepay.sslcommerz.com/gwprocess/v4/api.php";
-                $this->host = false;
             }
         }
         $this->payment = $payment;
         $this->user = $user;
+    }
+
+    /**
+     * Common cURL options for SSLCZ API calls.
+     * CWE-295 / M-2: TLS verification is ALWAYS enforced
+     * (no `getEnvMode() == test` exception).  In test mode the
+     * controller should configure `CURLOPT_CAINFO` if a custom
+     * CA bundle is required.
+     */
+    private function sslczCurlOptions(string $url, string $method = 'POST', array $postFields = []): array
+    {
+        return [
+            CURLOPT_URL            => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TIMEOUT        => 30,
+            CURLOPT_CUSTOMREQUEST => strtoupper($method),
+            CURLOPT_POSTFIELDS    => $postFields,
+        ];
     }
 
     public function index(Request $request)
@@ -81,7 +100,7 @@ class SslCommerzPaymentController extends Controller
         $post_data['fail_url'] = url('/') . '/payment/sslcommerz/failed?payment_id=' . $data['id'];
         $post_data['cancel_url'] = url('/') . '/payment/sslcommerz/canceled?payment_id=' . $data['id'];
 
-        # CUSTOMER INFORMATION
+        // CUSTOMER INFORMATION
         $post_data['cus_name'] = $payer_information->name;
         $post_data['cus_email'] = $payer_information->email && $payer_information->email != '' ? $payer_information->email : 'example@example.com';
         $post_data['cus_add1'] = 'N/A';
@@ -93,7 +112,7 @@ class SslCommerzPaymentController extends Controller
         $post_data['cus_phone'] = $payer_information->phone ?? '0000000000';
         $post_data['cus_fax'] = "";
 
-        # SHIPMENT INFORMATION
+        // SHIPMENT INFORMATION
         $post_data['ship_name'] = "N/A";
         $post_data['ship_add1'] = "N/A";
         $post_data['ship_add2'] = "N/A";
@@ -108,103 +127,96 @@ class SslCommerzPaymentController extends Controller
         $post_data['product_category'] = "N/A";
         $post_data['product_profile'] = "service";
 
-        # OPTIONAL PARAMETERS
+        // OPTIONAL PARAMETERS
         $post_data['value_a'] = "ref001";
         $post_data['value_b'] = "ref002";
         $post_data['value_c'] = "ref003";
         $post_data['value_d'] = "ref004";
 
+        // CWE-295 / M-2: TLS verification ALWAYS enforced
         $handle = curl_init();
-        curl_setopt($handle, CURLOPT_URL, $this->direct_api_url);
-        curl_setopt($handle, CURLOPT_TIMEOUT, 30);
-        curl_setopt($handle, CURLOPT_CONNECTTIMEOUT, 30);
-        curl_setopt($handle, CURLOPT_POST, 1);
-        curl_setopt($handle, CURLOPT_POSTFIELDS, $post_data);
-        curl_setopt($handle, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($handle, CURLOPT_SSL_VERIFYPEER,  in_array(getEnvMode(),['demo','test' ,'dev']) ? false : $this->host); # KEEP IT FALSE IF YOU RUN FROM LOCAL PC
+        curl_setopt_array($handle, $this->sslczCurlOptions($this->direct_api_url, 'POST', $post_data));
 
         $content = curl_exec($handle);
         $code = curl_getinfo($handle, CURLINFO_HTTP_CODE);
-        if ($code == 200 && !(curl_errno($handle))) {
-            curl_close($handle);
+        $err = curl_error($handle);
+        curl_close($handle);
+
+        if ($code == 200 && $content !== false) {
             $sslcommerzResponse = $content;
         } else {
-            curl_close($handle);
+            Log::error('SSLCZ create-session failed', [
+                'http' => $code,
+                'curl_error' => $err,
+                'body' => $content,
+            ]);
             return back();
         }
 
         $sslcz = json_decode($sslcommerzResponse, true);
 
         if (isset($sslcz['GatewayPageURL']) && $sslcz['GatewayPageURL'] != "") {
-            echo "<meta http-equiv='refresh' content='0;url=" . $sslcz['GatewayPageURL'] . "'>";
-            exit;
+            return redirect()->away($sslcz['GatewayPageURL']);
         } else {
             return response()->json($this->response_formatter(GATEWAYS_DEFAULT_204), 200);
         }
     }
 
-    # FUNCTION TO CHECK HASH VALUE
-    protected function SSLCOMMERZ_hash_verify($store_passwd, $post_data)
+    /**
+     * Verify the SSLCOMMERZ signature (CWE-345 / M-2).
+     * The signature covers: verify_key fields (sorted) + md5(store_password)
+     */
+    protected function SSLCOMMERZ_hash_verify($store_passwd, $post_data): bool
     {
-        if (isset($post_data) && isset($post_data['verify_sign']) && isset($post_data['verify_key'])) {
-            # NEW ARRAY DECLARED TO TAKE VALUE OF ALL POST
-            $pre_define_key = explode(',', $post_data['verify_key']);
-
-            $new_data = array();
-            if (!empty($pre_define_key)) {
-                foreach ($pre_define_key as $value) {
-                    if (isset($post_data[$value])) {
-                        $new_data[$value] = ($post_data[$value]);
-                    }
-                }
-            }
-            # ADD MD5 OF STORE PASSWORD
-            $new_data['store_passwd'] = md5($store_passwd);
-
-            # SORT THE KEY AS BEFORE
-            ksort($new_data);
-
-            $hash_string = "";
-            foreach ($new_data as $key => $value) {
-                $hash_string .= $key . '=' . ($value) . '&';
-            }
-            $hash_string = rtrim($hash_string, '&');
-
-            if (md5($hash_string) == $post_data['verify_sign']) {
-
-                return true;
-            } else {
-                $this->error = "Verification signature not matched";
-                return false;
-            }
-        } else {
-            $this->error = 'Required data mission. ex: verify_key, verify_sign';
+        if (!isset($post_data['verify_sign']) || !isset($post_data['verify_key'])) {
             return false;
         }
+
+        $pre_define_key = explode(',', $post_data['verify_key']);
+
+        $new_data = [];
+        if (!empty($pre_define_key)) {
+            foreach ($pre_define_key as $value) {
+                if (isset($post_data[$value])) {
+                    $new_data[$value] = ($post_data[$value]);
+                }
+            }
+        }
+        $new_data['store_passwd'] = md5($store_passwd);
+
+        ksort($new_data);
+
+        $hash_string = '';
+        foreach ($new_data as $key => $value) {
+            $hash_string .= $key . '=' . ($value) . '&';
+        }
+        $hash_string = rtrim($hash_string, '&');
+
+        return hash_equals(md5($hash_string), (string) $post_data['verify_sign']);
     }
 
     public function success(Request $request): JsonResponse|Redirector|RedirectResponse|Application
     {
-        if ($request['status'] == 'VALID' && $this->SSLCOMMERZ_hash_verify($this->store_password, $request)) {
-
-            $this->payment::where(['id' => $request['payment_id']])->update([
-                'payment_method' => 'ssl_commerz',
-                'is_paid' => 1,
-                'transaction_id' => $request->input('tran_id')
-            ]);
-
-            $data = $this->payment::where(['id' => $request['payment_id']])->first();
-
-            if (isset($data) && function_exists($data->success_hook)) {
-                call_user_func($data->success_hook, $data);
+        // CWE-345 / M-2: signature MUST verify
+        if (!isset($request['status']) || $request['status'] !== 'VALID' || !$this->SSLCOMMERZ_hash_verify($this->store_password, $request->all())) {
+            $payment_data = $this->payment::where(['id' => $request['payment_id']])->first();
+            if ($payment_data && function_exists($payment_data->failure_hook)) {
+                call_user_func($payment_data->failure_hook, $payment_data);
             }
-            return $this->payment_response($data, 'success');
+            return $this->payment_response($payment_data, 'fail');
         }
-        $payment_data = $this->payment::where(['id' => $request['payment_id']])->first();
-        if (isset($payment_data) && function_exists($payment_data->failure_hook)) {
-            call_user_func($payment_data->failure_hook, $payment_data);
+
+        $this->payment::where(['id' => $request['payment_id']])->update([
+            'payment_method' => 'ssl_commerz',
+            'is_paid'        => 1,
+            'transaction_id' => $request->input('tran_id'),
+        ]);
+
+        $data = $this->payment::where(['id' => $request['payment_id']])->first();
+        if (isset($data) && function_exists($data->success_hook)) {
+            call_user_func($data->success_hook, $data);
         }
-        return $this->payment_response($payment_data, 'fail');
+        return $this->payment_response($data, 'success');
     }
 
     public function failed(Request $request): JsonResponse|Redirector|RedirectResponse|Application

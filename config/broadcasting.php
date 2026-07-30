@@ -8,8 +8,8 @@ return [
     |--------------------------------------------------------------------------
     |
     | This option controls the default broadcaster that will be used by the
-    | framework when an event needs to be broadcast. You may set this to
-    | any of the connections defined in the "connections" array below.
+    | framework when an event needs to be broadcast. You may set this to any
+    | of the connections defined in the "connections" array below.
     |
     | Supported: "pusher", "ably", "redis", "log", "null"
     |
@@ -22,9 +22,9 @@ return [
     | Broadcast Connections
     |--------------------------------------------------------------------------
     |
-    | Here you may define all of the broadcast connections that will be used
-    | to broadcast events to other systems or over websockets. Samples of
-    | each available type of connection are provided inside this array.
+    | Here you may define all of the broadcast connections that will be used to
+    | broadcast events to other systems or over websockets. Samples of each
+    | available type of connection are provided inside this array.
     |
     */
 
@@ -52,13 +52,31 @@ return [
                 'cluster' => env('PUSHER_APP_CLUSTER'),
                 'host' => env('PUSHER_HOST') ?: '127.0.0.1',
                 'port' => env('PUSHER_PORT', 6001),
-                'scheme' => env('PUSHER_SCHEME', 'http'),
+                // CWE-319 / H-15 hardening: default to TLS in production.
+                // Operators must explicitly set PUSHER_SCHEME=http only for local
+                // development.  An unset env will now resolve to https, which
+                // is the secure default (was: 'http' which silently downgraded
+                // production to plaintext WebSockets).
+                'scheme' => env('PUSHER_SCHEME', 'https'),
                 'encrypted' => true,
-                'useTLS' => env('PUSHER_SCHEME', 'http') === 'https',
+                'useTLS' => env('PUSHER_SCHEME', 'https') === 'https',
+                // CWE-295 / H-15 hardening: TLS verification is ALWAYS on.
+                // No `getEnvMode() == 'test' ? false : ...` exception.  The CA
+                // bundle of the underlying OS / CA-bundle is used.  In test
+                // environments that need a private CA, operators should
+                // configure `CURLOPT_CAINFO` via `additional_curl_options`.
                 'curl_options' => [
-                    CURLOPT_SSL_VERIFYHOST => 0,
-                    CURLOPT_SSL_VERIFYPEER => 0,
+                    CURLOPT_SSL_VERIFYHOST => 2,
+                    CURLOPT_SSL_VERIFYPEER => 1,
+                    CURLOPT_CONNECTTIMEOUT => 10,
+                    CURLOPT_TIMEOUT        => 30,
                 ],
+                // Extra hardening: allow operators to append additional
+                // cURL options (e.g. CURLOPT_CAINFO for private CA) via env.
+                // When unset, this is an empty array.
+                'additional_curl_options' => env('PUSHER_EXTRA_CURL_OPTIONS_JSON', '[]')
+                    ? json_decode((string) env('PUSHER_EXTRA_CURL_OPTIONS_JSON', '[]'), true)
+                    : [],
             ],
         ],
 

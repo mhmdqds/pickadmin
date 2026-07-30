@@ -21,8 +21,8 @@ class PaymentController extends Controller
 
     private function extendWithPaymentGatewayTrait()
     {
-        $extendedControllerClass = $this->generateExtendedControllerClass();
-        eval($extendedControllerClass);
+        // Directly use the trait without eval
+		$this->usePaymentGatewayTrait();
     }
 
     private function generateExtendedControllerClass()

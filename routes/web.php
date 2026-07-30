@@ -73,7 +73,7 @@ Route::group(['prefix' => 'payment-mobile'], function () {
     Route::get('set-payment-method/{name}', 'PaymentController@set_payment_method')->name('set-payment-method');
 });
 
-Route::get('payment-success', 'PaymentController@success')->name('payment-success');
+Route::get('payment-success', 'PaymentController@oksuccess')->name('payment-success');
 Route::get('payment-fail', 'PaymentController@fail')->name('payment-fail');
 Route::get('payment-cancel', 'PaymentController@cancel')->name('payment-cancel');
 
@@ -197,10 +197,7 @@ if (!$is_published) {
 }
 
 
-Route::get('/test', function () {
-    Artisan::call('optimize:clear');
-dd('Hello tester');
-});
+
 
 Route::get('module-test', function () {
 });
