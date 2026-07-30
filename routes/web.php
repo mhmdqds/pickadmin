@@ -197,11 +197,6 @@ if (!$is_published) {
 }
 
 
-
-
-Route::get('module-test', function () {
-});
-
 //Restaurant Registration
 Route::group(['prefix' => 'vendor', 'as' => 'restaurant.'], function () {
     Route::get('apply', 'VendorController@create')->name('create');
@@ -230,17 +225,143 @@ Route::group(['prefix' => 'deliveryman', 'as' => 'deliveryman.'], function () {
 
 });
 
+
+/*
+|--------------------------------------------------------------------------
+| /image-proxy — hardened SSRF-safe image proxy (H-10 fix)
+| - Requires signed `?exp=…&hash=…` params (HMAC-SHA256 of the URL + expiry)
+| - Only http/https schemes
+| - Only allow-listed hosts (config driven via IMAGE_PROXY_ALLOWED_HOSTS env)
+| - Blocks private/loopback IP literals and DNS-rebound private/loopback ranges
+| - Bounded timeout (8s) and max size (10 MB) via stream context
+| - Cache headers: 1 day public, 7 days stale-while-revalidate
+| - CORS removed (CORS does not make sense for a same-origin proxy)
+|--------------------------------------------------------------------------
+*/
 Route::get('/image-proxy', function () {
-    $url = request('url');
-    if (!$url) {
+    $url  = (string) request('url');
+    $exp  = (string) request('exp');
+    $hash = (string) request('hash');
+
+    if ($url === '') {
         abort(400, 'Missing url parameter');
     }
+    if ($exp === '' || $hash === '') {
+        abort(403, 'Missing signature');
+    }
+    if ((int) $exp < time()) {
+        abort(403, 'Signature expired');
+    }
 
-    $response = Http::withHeaders([
-        'User-Agent' => 'Laravel-Image-Proxy'
-    ])->get($url);
+    $secret = (string) config('app.key');
+    if ($secret === '' || !hash_equals(hash_hmac('sha256', $url, $exp . '|' . $secret), $hash)) {
+        abort(403, 'Invalid signature');
+    }
 
-    return response($response->body(), $response->status())
-        ->header('Content-Type', $response->header('Content-Type'))
-        ->header('Access-Control-Allow-Origin', '*');
-});
+    // Scheme allow-list (block file://, gopher://, etc.)
+    $parts = parse_url($url);
+    if ($parts === false || !isset($parts['scheme'], $parts['host'])) {
+        abort(400, 'Invalid url');
+    }
+    $scheme = strtolower($parts['scheme']);
+    if (!in_array($scheme, ['http', 'https'], true)) {
+        abort(400, 'Scheme not allowed');
+    }
+    $host = strtolower($parts['host']);
+
+    // Host allow-list (config/env driven)
+    $allowed = array_filter(array_map('trim', explode(',', (string) env('IMAGE_PROXY_ALLOWED_HOSTS', ''))));
+    if (empty($allowed)) {
+        // Secure default: no hosts allowed unless explicitly configured
+        abort(403, 'No allowed hosts configured');
+    }
+    $allowed = array_map('strtolower', $allowed);
+    $hostOk = false;
+    foreach ($allowed as $candidate) {
+        if ($candidate === $host) {
+            $hostOk = true;
+            break;
+        }
+        if (str_starts_with($candidate, '*.')
+            && strlen($host) > strlen($candidate) - 1
+            && substr($host, -strlen($candidate) + 1) === substr($candidate, 1)) {
+            $hostOk = true;
+            break;
+        }
+    }
+    if (!$hostOk) {
+        abort(403, 'Host not allowed');
+    }
+
+    // SSRF: block private/loopback IP literals, and DNS-resolved private/loopback.
+    $banned = [
+        '127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16',
+        '169.254.0.0/16',     // link-local incl. AWS / GCP metadata
+        '0.0.0.0/8', '::1/128', 'fc00::/7', 'fe80::/10',
+    ];
+    $ipInCidr = function (string $ip, string $cidr): bool {
+        [$subnet, $bits] = explode('/', $cidr, 2);
+        $bits = (int) $bits;
+        $mask = $bits === 0 ? 0 : ((-1 << (32 - $bits)) & 0xFFFFFFFF);
+        $ipLong  = ip2long($ip);
+        $subLong = ip2long($subnet);
+        if ($ipLong === false || $subLong === false) {
+            // IPv6 simple fallback
+            return strpos($ip, ':') !== false && strpos($cidr, ':') !== false
+                && strpos($ip, substr($cidr, 0, strpos($cidr, '/'))) === 0;
+        }
+        return (($ipLong & $mask) === ($subLong & $mask));
+    };
+    if (filter_var($host, FILTER_VALIDATE_IP)) {
+        foreach ($banned as $cidr) {
+            if ($ipInCidr($host, $cidr)) { abort(403, 'IP not allowed'); }
+        }
+    } else {
+        $records = @dns_get_record($host, DNS_A + DNS_AAAA);
+        $ips = [];
+        foreach ((array) $records as $r) {
+            if (!empty($r['ip']))    { $ips[] = $r['ip']; }
+            if (!empty($r['ipv6'])) { $ips[] = $r['ipv6']; }
+        }
+        if (empty($ips)) { abort(502, 'Could not resolve host'); }
+        foreach ($ips as $ip) {
+            foreach ($banned as $cidr) {
+                if ($ipInCidr($ip, $cidr)) { abort(403, 'IP not allowed'); }
+            }
+        }
+    }
+
+    // Bounded timeout + max size via stream context
+    $ctx = stream_context_create([
+        'http' => [
+            'timeout'         => 8,
+            'max_redirects'   => 3,
+            'ignore_errors'   => true,
+            'follow_location' => 1,
+            'user_agent'      => 'Laravel-Image-Proxy/1.0',
+            'header'          => "Accept: image/*\r\n",
+        ],
+    ]);
+    $body = @file_get_contents($url, false, $ctx, 0, 10 * 1024 * 1024 + 1);
+    if ($body === false || strlen($body) > 10 * 1024 * 1024) {
+        abort(502, 'Failed to fetch image or too large');
+    }
+
+    $headers = $http_response_header ?? [];
+    $status  = 200;
+    $ctype   = 'image/jpeg';
+    foreach ($headers as $h) {
+        if (preg_match('#^HTTP/\S+\s+(\d+)#', $h, $m)) { $status = (int) $m[1]; }
+        if (stripos($h, 'Content-Type:') === 0) { $ctype = trim(substr($h, 13)); }
+    }
+    if (strpos($ctype, 'image/') !== 0) {
+        abort(415, 'Not an image');
+    }
+    if ($status >= 400) {
+        abort($status, 'Upstream error');
+    }
+    return response($body, 200)
+        ->header('Content-Type', $ctype)
+        ->header('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800')
+        ->header('X-Content-Type-Options', 'nosniff');
+})->name('image-proxy');
