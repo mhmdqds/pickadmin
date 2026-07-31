@@ -37,7 +37,10 @@ Route::group(['namespace' => 'Api\V1', 'middleware'=>'localization'], function (
     Route::group(['prefix' => 'auth', 'namespace' => 'Auth'], function () {
         Route::post('sign-up', 'CustomerAuthController@register');
         Route::post('login', 'CustomerAuthController@login');
-        Route::post('external-login', 'CustomerAuthController@customerLoginFromDrivemond');
+        // H-? fix (F-12): cross-system Drivemond login is now protected by
+        // HMAC VerifyCrossSystemSignature instead of relying on a CSRF exemption.
+        Route::post('external-login', 'CustomerAuthController@customerLoginFromDrivemond')
+            ->middleware('verify.cross-system');
         Route::post('verify-phone', 'CustomerAuthController@verify_phone_or_email');
         Route::post('update-info', 'CustomerAuthController@update_info');
         Route::post('firebase-verify-token', 'CustomerAuthController@firebase_auth_verify');
@@ -354,7 +357,14 @@ Route::group(['namespace' => 'Api\V1', 'middleware'=>'localization'], function (
             Route::delete('saved-files/delete-all', 'CustomerController@delete_all_prescription_files');
 
             Route::post('get-data', 'CustomerController@getCustomer');
-            Route::post('external-update-data', 'CustomerController@externalUpdateCustomer')->withoutMiddleware(['auth:api','module-check']);
+            // H-? fix (F-12): external-update-data was previously both
+            // CSRF-exempt AND unauthenticated (any caller could mutate any
+            // user).  It is now stripped of the auth bypass and requires a
+            // valid HMAC X-Signature instead.  See VerifyCrossSystemSignature
+            // and config/cross_system.php.
+            Route::post('external-update-data', 'CustomerController@externalUpdateCustomer')
+                ->middleware('verify.cross-system')
+                ->withoutMiddleware(['auth:api','module-check']);
             Route::get('notifications', 'NotificationController@get_notifications');
             Route::get('info', 'CustomerController@info');
             Route::get('update-zone', 'CustomerController@update_zone');

@@ -88,6 +88,13 @@ class InstallController extends Controller
 
     public function purchase_code(Request $request)
     {
+        // H-? fix (F-03): defence in depth - even if InstallationMiddleware is
+        // bypassed (custom route definition / config mistake), refuse to run
+        // when installation has already been completed.
+        if (filter_var(env('APP_INSTALL'), FILTER_VALIDATE_BOOLEAN) === true) {
+            abort(404);
+        }
+
         Helpers::setEnvironmentValue('SOFTWARE_ID', 'MzY3NzIxMTI=');
         Helpers::setEnvironmentValue('BUYER_USERNAME', $request['username']);
         Helpers::setEnvironmentValue('PURCHASE_CODE', $request['purchase_key']);
@@ -109,6 +116,14 @@ class InstallController extends Controller
 
     public function system_settings(Request $request)
     {
+        // H-? fix (F-03): defence in depth - abort 404 if installation has
+        // already been completed. InstallationMiddleware does this as well,
+        // but a developer removing middleware (or a misconfigured web server)
+        // must not be able to re-run this on an installed host.
+        if (filter_var(env('APP_INSTALL'), FILTER_VALIDATE_BOOLEAN) === true) {
+            abort(404);
+        }
+
         if (!Hash::check('step_6', $request['token'])) {
             session()->flash('error', 'Access denied!');
             return redirect()->route('step0');
@@ -156,12 +171,25 @@ class InstallController extends Controller
             info($exception);
         }
 
+        // H-? fix (F-03): mark installation as COMPLETED by writing
+        // APP_INSTALL=true to .env. From the next request onward the
+        // InstallationMiddleware will return 404 for every installer route.
+        Helpers::setEnvironmentValue('APP_INSTALL', 'true');
+
         //sleep(5);
         return view('installation.step6');
     }
 
     public function database_installation(Request $request)
     {
+        // H-? fix (F-03): defence in depth - abort 404 if installation
+        // has already been completed (InstallationMiddleware also enforces
+        // this, but this method writes the .env file so we MUST not allow
+        // it to run on an already-installed host under any circumstances).
+        if (filter_var(env('APP_INSTALL'), FILTER_VALIDATE_BOOLEAN) === true) {
+            abort(404);
+        }
+
         if (self::check_database_connection($request->DB_HOST, $request->DB_DATABASE, $request->DB_USERNAME, $request->DB_PASSWORD)) {
 
             $key = base64_encode(random_bytes(32));
@@ -169,7 +197,7 @@ class InstallController extends Controller
                     'APP_ENV=live
                     APP_KEY=base64:' . $key . '
                     APP_DEBUG=false
-                    APP_INSTALL=true
+                    APP_INSTALL=false
                     APP_LOG_LEVEL=debug
                     APP_MODE=live
                     APP_URL=' . URL::to('/') . '

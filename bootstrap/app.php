@@ -94,6 +94,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'current-module' => CurrentModule::class,
             'admin-rental-module' => AdminRentalModuleCheckMiddleware::class,
             'provider-rental-module' => ProviderRentalModuleCheckMiddleware::class,
+
+            // H-? fix (F-12): HMAC verification of cross-system / server-to-server
+            //              requests.  Applied per-route on endpoints that were
+            //              previously both unauthenticated AND CSRF-exempt.
+            'verify.cross-system' => \App\Http\Middleware\VerifyCrossSystemSignature::class,
         ]);
     })
 

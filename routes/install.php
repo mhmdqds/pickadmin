@@ -13,8 +13,12 @@ Route::get('/step5', 'InstallController@step5')->name('step5')->middleware('inst
 Route::post('/database_installation', 'InstallController@database_installation')->name('install.db')->middleware('installation-check');
 Route::get('import_sql', 'InstallController@import_sql')->name('import_sql')->middleware('installation-check');
 Route::get('force-import-sql', 'InstallController@force_import_sql')->name('force-import-sql')->middleware('installation-check');
-Route::post('system_settings', 'InstallController@system_settings')->name('system_settings');
-Route::post('purchase_code', 'InstallController@purchase_code')->name('purchase.code');
+// H-? fix (F-03): system_settings and purchase_code previously had NO middleware,
+// meaning they were reachable after installation. Both endpoints now require the
+// installation-check middleware, which (since H-? fix) refuses ALL installer
+// routes once APP_INSTALL=true is set in .env.
+Route::post('system_settings', 'InstallController@system_settings')->name('system_settings')->middleware('installation-check');
+Route::post('purchase_code', 'InstallController@purchase_code')->name('purchase.code')->middleware('installation-check');
 
 Route::fallback(function () {
     return redirect('/');
