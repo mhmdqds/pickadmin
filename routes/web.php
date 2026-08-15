@@ -99,11 +99,31 @@ if (!$is_published) {
 
         //STRIPE
         Route::group(['prefix' => 'stripe', 'as' => 'stripe.'], function () {
-            Route::get('pay', [StripePaymentController::class, 'index'])->name('pay');
-            Route::get('token', [StripePaymentController::class, 'payment_process_3d'])->name('token');
-            Route::get('success', [StripePaymentController::class, 'success'])->name('success');
+            // Customer-facing routes. CSRF-exempt because they are
+            // either GETs (no body) or browser-driven; the compensating
+            // controls are signature binding, idempotency, replay guards
+            // and amount/currency equality enforced in the controller.
+            Route::get('pay', [StripePaymentController::class, 'index'])
+                ->middleware('throttle:30,1')
+                ->name('pay');
+            Route::get('token', [StripePaymentController::class, 'payment_process_3d'])
+                ->middleware('throttle:30,1')
+                ->name('token');
+            Route::get('success', [StripePaymentController::class, 'success'])
+                ->middleware('throttle:60,1')
+                ->name('success');
             Route::get('canceled', [StripePaymentController::class, 'canceled'])
-                ->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
+                ->middleware('throttle:30,1')
+                ->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class])
+                ->name('canceled');
+
+            // Stripe webhook. Verifies the Stripe-Signature header; NOT
+            // throttled (Stripe sends from fixed IPs and the signature
+            // check authenticates the caller; the unique stripe_session_id
+            // index dedupes retries).
+            Route::post('webhook', [StripePaymentController::class, 'webhook'])
+                ->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class])
+                ->name('webhook');
         });
 
       //RAZOR-PAY

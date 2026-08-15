@@ -818,6 +818,7 @@ class BusinessSettingsController extends Controller
                 'status' => 'required|in:1,0',
                 'api_key' => 'required_if:status,1',
                 'published_key' => 'required_if:status,1',
+                'webhook_secret' => 'nullable|string|max:191',
             ];
             $validation_messages = [
                 'gateway_image.required' => translate('Gateway image is required'),
