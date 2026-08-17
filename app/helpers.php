@@ -125,6 +125,25 @@ if (! function_exists('collect_cash_success')) {
 if (! function_exists('order_place')) {
     function order_place($data) {
         $order = Order::find($data->attribute_id);
+        // FIX-13: refuse illegal source states. The legal pre-payment
+        // states in this project are `pending` and `failed` (digital
+        // goods are created with status='failed'). Any other source
+        // state (cancelled/refunded/delivered/confirmed/already paid)
+        // is rejected so a replayed callback cannot resurrect a
+        // cancelled order or refund-then-repay.
+        $allowedSourceStates = ['pending', 'failed', 'unpaid'];
+        if (!$order || !in_array($order->order_status, $allowedSourceStates, true)) {
+            \Log::warning('order_place: refused illegal source state', [
+                'order_id'        => $data->attribute_id,
+                'current_status'  => $order?->order_status,
+                'payment_status'  => $order?->payment_status,
+            ]);
+            return;
+        }
+        if ($order->payment_status === 'paid') {
+            // Already paid — idempotent no-op (FIX-06 / FIX-19).
+            return;
+        }
         $order->order_status='confirmed';
         if($order->payment_method != 'partial_payment'){
             $order->payment_method=$data->payment_method;

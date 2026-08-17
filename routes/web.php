@@ -144,11 +144,29 @@ if (!$is_published) {
 
         //PAYPAL
         Route::group(['prefix' => 'paypal', 'as' => 'paypal.'], function () {
-            Route::get('pay', [PaypalPaymentController::class, 'payment']);
-            Route::any('success', [PaypalPaymentController::class, 'success'])->name('success')
-                ->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);;
-            Route::any('cancel', [PaypalPaymentController::class, 'cancel'])->name('cancel')
-                ->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);;
+            // Customer-facing browser routes (FIX-12 / FIX-19).
+            // Throttled because the success URL is a GET callback that
+            // can be replayed by the browser; the controller is now
+            // idempotent under lockForUpdate, but throttling is a cheap
+            // extra layer.
+            Route::get('pay', [PaypalPaymentController::class, 'payment'])
+                ->middleware('throttle:30,1')
+                ->name('pay');
+            Route::any('success', [PaypalPaymentController::class, 'success'])
+                ->middleware('throttle:60,1')
+                ->name('success')
+                ->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
+            Route::any('cancel', [PaypalPaymentController::class, 'cancel'])
+                ->middleware('throttle:30,1')
+                ->name('cancel')
+                ->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
+            // Server-to-server webhook (FIX-16 / FIX-17 / FIX-18 / FIX-19).
+            // Signature is verified inside the controller via PayPal's
+            // verify-webhook-signature endpoint.
+            Route::post('webhook', [PaypalPaymentController::class, 'webhook'])
+                ->middleware('throttle:120,1')
+                ->name('webhook')
+                ->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
         });
 
         //SENANG-PAY

@@ -75,11 +75,43 @@ trait  Processor
         return Helpers::update($dir,$old_image, $format,$image);
     }
 
+    /**
+     * Validate that an external redirect link is safe (FIX-15).
+     * Allows only https:// with a host that matches the configured
+     * base URL of the application. All other redirects are coerced
+     * to the local web success/fail/cancel routes.
+     */
+    private function isSafeExternalRedirect(?string $url): bool
+    {
+        if (!$url) {
+            return false;
+        }
+        $parts = parse_url($url);
+        if (!is_array($parts)) {
+            return false;
+        }
+        if (($parts['scheme'] ?? '') !== 'https') {
+            return false;
+        }
+        $host = strtolower($parts['host'] ?? '');
+        if ($host === '') {
+            return false;
+        }
+        // Allow the app's own host (config('app.url') is the canonical
+        // base) and any host explicitly allow-listed via env.
+        $appHost = parse_url((string)config('app.url'), PHP_URL_HOST);
+        $allowed = (array)config('app.allowed_redirect_hosts', []);
+        $allowed[] = $appHost;
+        $allowed = array_filter(array_map('strtolower', $allowed));
+        return in_array($host, $allowed, true);
+    }
+
     public function payment_response($payment_info, $payment_flag): Application|JsonResponse|Redirector|RedirectResponse|\Illuminate\Contracts\Foundation\Application
     {
         $payment_info = PaymentRequest::find($payment_info->id);
         $token_string = 'payment_method=' . $payment_info->payment_method . '&&attribute_id=' . $payment_info->attribute_id . '&&transaction_reference=' . $payment_info->transaction_id;
-        if (in_array($payment_info->payment_platform, ['web', 'app']) && $payment_info['external_redirect_link'] != null) {
+        if (in_array($payment_info->payment_platform, ['web', 'app']) && $payment_info['external_redirect_link'] != null && $this->isSafeExternalRedirect($payment_info['external_redirect_link'])) {
+            // FIX-15: only redirect to allow-listed hosts.
             return redirect($payment_info['external_redirect_link'] . '?flag=' . $payment_flag . '&&token=' . base64_encode($token_string));
         }
         return redirect()->route('payment-' . $payment_flag, ['token' => base64_encode($token_string)]);
