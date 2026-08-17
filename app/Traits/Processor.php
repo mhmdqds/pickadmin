@@ -108,12 +108,44 @@ trait  Processor
 
     public function payment_response($payment_info, $payment_flag): Application|JsonResponse|Redirector|RedirectResponse|\Illuminate\Contracts\Foundation\Application
     {
-        $payment_info = PaymentRequest::find($payment_info->id);
-        $token_string = 'payment_method=' . $payment_info->payment_method . '&&attribute_id=' . $payment_info->attribute_id . '&&transaction_reference=' . $payment_info->transaction_id;
-        if (in_array($payment_info->payment_platform, ['web', 'app']) && $payment_info['external_redirect_link'] != null && $this->isSafeExternalRedirect($payment_info['external_redirect_link'])) {
-            // FIX-15: only redirect to allow-listed hosts.
-            return redirect($payment_info['external_redirect_link'] . '?flag=' . $payment_flag . '&&token=' . base64_encode($token_string));
+        // Null-safety: $payment_info may be null when the gateway
+        // controller fails to resolve a row (e.g. invalid session_id,
+        // not_found, mismatch). In that case we must still produce a
+        // valid Laravel response — never a 500 due to a null property
+        // access.
+        $row = null;
+        if (is_object($payment_info) && isset($payment_info->id)) {
+            $row = PaymentRequest::find($payment_info->id);
         }
-        return redirect()->route('payment-' . $payment_flag, ['token' => base64_encode($token_string)]);
+
+        // Normalize the flag to one of the three supported outcomes.
+        // Any other value falls back to 'fail' so the route name
+        // `payment-fail` is guaranteed to exist.
+        $allowedFlags = ['success', 'fail', 'cancel'];
+        if (!in_array($payment_flag, $allowedFlags, true)) {
+            $payment_flag = 'fail';
+        }
+
+        $token_string = '';
+        if ($row) {
+            $token_string = 'payment_method=' . ($row->payment_method ?? '')
+                . '&&attribute_id=' . ($row->attribute_id ?? '')
+                . '&&transaction_reference=' . ($row->transaction_id ?? '');
+        }
+        $encodedToken = base64_encode($token_string);
+
+        // External (allow-listed) redirect takes precedence.
+        if ($row
+            && in_array($row->payment_platform, ['web', 'app'], true)
+            && !empty($row['external_redirect_link'])
+            && $this->isSafeExternalRedirect($row['external_redirect_link'])
+        ) {
+            // FIX-15: only redirect to allow-listed hosts.
+            return redirect($row['external_redirect_link'] . '?flag=' . $payment_flag . '&&token=' . $encodedToken);
+        }
+
+        // Fallback: local web route. The route name `payment-<flag>`
+        // is guaranteed to exist for success/fail/cancel.
+        return redirect()->route('payment-' . $payment_flag, ['token' => $encodedToken]);
     }
 }
