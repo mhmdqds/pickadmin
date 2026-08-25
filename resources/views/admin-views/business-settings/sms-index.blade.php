@@ -73,6 +73,9 @@
                                 <input name="mode" value="live" class="d-none">
 
                                 @php($skip=['gateway','mode','status'])
+                                @if($gateway->key_name == 'message_central')
+                                    @php($skip = array_merge($skip, ['sender_id','otp_length','message_type','template_id','entity_id']))
+                                @endif
                                 @foreach($data_values->where('key_name',$gateway->key_name)->first()->live_values as $key=>$value)
                                     @if(!in_array($key,$skip))
                                         <div class="form-floating mb-30 mt-30 text-capitalize">

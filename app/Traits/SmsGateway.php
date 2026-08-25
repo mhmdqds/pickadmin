@@ -82,7 +82,10 @@ trait  SmsGateway
             return self::alphanet_sms($receiver, $otp);
         }
 
-
+        $config = self::get_settings('message_central');
+        if (isset($config) && $config['status'] == 1) {
+            return self::message_central($receiver, $otp);
+        }
 
         return 'not_found';
     }
@@ -606,6 +609,161 @@ trait  SmsGateway
                 $response = 'error';
             }
         }
+        return $response;
+    }
+
+    /**
+     * Send OTP via Message Central (Message Now API).
+     *
+     * Verified working endpoint (per production Postman screenshots):
+     *   POST https://cpaas.messagecentral.com/verification/v3/send
+     *     ?countryCode=1
+     *     &customerId=C-D1E333296E22496
+     *     &flowType=SMS
+     *     &type=OTP
+     *     &mobileNumber=3478732224
+     *     &message=Your otp for verification is 787878
+     *     &otpLength=6
+     *     [&senderId=PickAdmin]
+     *     [&messageType=OTP]
+     *     [&templateId=...]
+     *     [&entityId=...]
+     *   Headers:
+     *     authToken: <JWT>
+     *     Content-Type: application/x-www-form-urlencoded
+     *
+     * The authToken is sent as a HEADER (not in the URL), even though Postman
+     * displays it inside the request URL bar by convention. On the wire it's
+     * a header.
+     *
+     * PickAdmin generates the OTP and substitutes #OTP# in the message body.
+     * This is NOT Verify Now managed-OTP — same flow as Twilio/Nexmo.
+     *
+     * Success requires HTTP 200 AND (responseCode == 200 OR message == "SUCCESS").
+     * Any other HTTP code, transport error, empty body, or non-success
+     * responseCode/message is treated as "error". Credentials are NEVER logged.
+     */
+    public static function message_central($receiver, $otp)
+    {
+        $config = self::get_settings('message_central');
+        $response = 'error';
+
+        if (isset($config) && (int) ($config['status'] ?? 0) === 1) {
+            $customer_id  = $config['customer_id']  ?? null;
+            $auth_token   = $config['auth_token']   ?? null;
+            $country_code = $config['country_code'] ?? null;
+            $otp_template = $config['otp_template'] ?? 'Your verification code is #OTP#';
+
+            // senderId is hard-coded for all Message Central accounts in this
+            // integration. Operator does not see or set this field.
+            $sender_id = 'UTOMOB';
+
+            // OTP length is hard-coded to 6 for this integration. The Message
+            // Central Message Now API requires otpLength, but PickAdmin owns
+            // the OTP value (substituted into the message body), so the OTP
+            // length is purely informational from the API's perspective.
+            $otp_length = 6;
+
+            $message_type = $config['message_type'] ?? null;
+            $template_id  = $config['template_id']  ?? null;
+            $entity_id    = $config['entity_id']    ?? null;
+
+            if (empty($customer_id) || empty($auth_token) || empty($country_code)) {
+                return 'error';
+            }
+
+            // Phone normalization:
+            //   1. Strip '+' and any non-digit characters.
+            //   2. Strip the leading country code if present, so the mobile
+            //      number does NOT contain the country code prefix.
+            // Examples (with countryCode="1"):
+            //   "+1 347 873 2224"  → "3478732224"
+            //   "13478732224"      → "3478732224"
+            //   "3478732224"       → "3478732224"
+            //   "+91 98765 43210"  → "9876543210"  (with countryCode="91")
+            $country_code_clean = ltrim((string) $country_code, '+');
+            $mobile = preg_replace('/[^0-9]/', '', (string) $receiver);
+            if ($country_code_clean !== '' && strpos($mobile, $country_code_clean) === 0) {
+                $mobile = substr($mobile, strlen($country_code_clean));
+            }
+            if ($mobile === '') {
+                return 'error';
+            }
+
+            // PickAdmin owns the OTP value.
+            $message = str_replace('#OTP#', $otp, $otp_template);
+
+            // Build the QUERY STRING. Message Central accepts the parameters
+            // either in the URL query string OR in a form-urlencoded body —
+            // we use the URL form to match the working Postman call exactly.
+            $query = [
+                'countryCode'  => ltrim((string) $country_code, '+'),
+                'customerId'   => $customer_id,
+                'flowType'     => 'SMS',
+                'type'         => 'SMS',
+                'mobileNumber' => $mobile,
+                'message'      => $message,
+                'otpLength'    => $otp_length,
+            ];
+            if (!empty($sender_id))    { $query['senderId']    = $sender_id; }
+            if (!empty($message_type)) { $query['messageType'] = $message_type; }
+            if (!empty($template_id))  { $query['templateId']  = $template_id; }
+            if (!empty($entity_id))    { $query['entityId']    = $entity_id; }
+
+            $url = "https://cpaas.messagecentral.com/verification/v3/send?countryCode=" . ltrim((string) $country_code, '+') . 
+                "&customerId=" . $customer_id . 
+                "&flowType=SMS" . 
+                "&type=OTP" . 
+                "&senderId=UTOMOB" . 
+                "&mobileNumber=" . $mobile . 
+                "&message=" . urlencode($message);
+            // authToken sent as a HEADER (per the working Postman call).
+            $curl = curl_init();
+            curl_setopt_array($curl, [
+                CURLOPT_URL            => $url,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CUSTOMREQUEST  => 'POST',
+                CURLOPT_POSTFIELDS     => '',
+                CURLOPT_HTTPHEADER     => [
+                    'Accept: application/json',
+                    'Content-Type: application/x-www-form-urlencoded',
+                    'authToken: ' . $auth_token,
+                ],
+                CURLOPT_TIMEOUT        => 30,
+                CURLOPT_CONNECTTIMEOUT => 10,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_SSL_VERIFYHOST => 2,
+                CURLOPT_HTTP_VERSION   => CURL_HTTP_VERSION_1_1,
+            ]);
+
+            $raw  = curl_exec($curl);
+            $http = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+            $err  = curl_error($curl);
+            curl_close($curl);
+
+            if ($raw === false || !empty($err)) {
+                return 'error';
+            }
+
+            $decoded      = json_decode((string) $raw, true);
+            $responseCode = is_array($decoded) ? ($decoded['responseCode'] ?? null) : null;
+            $messageCode  = is_array($decoded) ? ($decoded['message'] ?? null) : null;
+
+            if ((int) $http === 200 && ((string) $responseCode === '200' || strcasecmp((string) $messageCode, 'success') === 0)) {
+                $response = 'success';
+            } else {
+                $safeError = is_array($decoded) ? ($decoded['errorMessage'] ?? $decoded['message'] ?? 'unknown_error') : 'invalid_response';
+                try {
+                    if (function_exists('info')) {
+                        info('MessageCentral SMS send failed: ' . $safeError);
+                    }
+                } catch (\Throwable $t) {
+                    // ignore logging failures
+                }
+                $response = 'error';
+            }
+        }
+
         return $response;
     }
 

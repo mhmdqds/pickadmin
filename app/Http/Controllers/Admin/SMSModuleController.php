@@ -26,8 +26,92 @@ class SMSModuleController extends Controller
                 }
             }
         }
-        $data_values=  Setting::where('settings_type','sms_config')->whereIn('key_name', ['twilio','nexmo','2factor','msg91','alphanet_sms'])->get() ?? [];
-        return view('admin-views.business-settings.sms-index',compact('data_values','published_status','payment_url'));
+
+        // Whitelist of SMS providers that must always have a card on the page.
+        $whitelist = [
+            'twilio' => [
+                'gateway' => 'twilio',
+                'mode'    => 'live',
+                'status'  => 0,
+                'sid' => '',
+                'messaging_service_sid' => '',
+                'token' => '',
+                'from' => '',
+                'otp_template' => 'Your verification code is #OTP#',
+            ],
+            'nexmo' => [
+                'gateway' => 'nexmo',
+                'mode'    => 'live',
+                'status'  => 0,
+                'api_key' => '',
+                'api_secret' => '',
+                'token' => '',
+                'from' => '',
+                'otp_template' => 'Your verification code is #OTP#',
+            ],
+            '2factor' => [
+                'gateway' => '2factor',
+                'mode'    => 'live',
+                'status'  => 0,
+                'api_key' => '',
+                'otp_template' => 'Your OTP is: #OTP#',
+            ],
+            'msg91' => [
+                'gateway' => 'msg91',
+                'mode'    => 'live',
+                'status'  => 0,
+                'template_id' => '',
+                'auth_key' => '',
+            ],
+            'alphanet_sms' => [
+                'gateway' => 'alphanet_sms',
+                'mode'    => 'live',
+                'status'  => 0,
+                'api_key' => '',
+                'sender_id' => '',
+                'otp_template' => 'Your verification code is #OTP#',
+            ],
+            'message_central' => [
+                'gateway'      => 'message_central',
+                'mode'         => 'live',
+                'status'       => 0,
+                'customer_id'  => '',
+                'auth_token'   => '',
+                'country_code' => '',
+                'otp_template' => 'Your verification code is #OTP#',
+            ],
+        ];
+
+        // Self-heal: ensure every whitelisted provider has at least one row in
+        // addon_settings so the admin page renders a card for it on first visit.
+        // If a row already exists (because the operator saved it before), leave
+        // its live_values untouched.
+        foreach ($whitelist as $key_name => $defaults) {
+            $exists = Setting::where([
+                'key_name'      => $key_name,
+                'settings_type' => 'sms_config',
+            ])->first();
+
+            if (!$exists) {
+                $payload = json_encode($defaults);
+                DB::table('addon_settings')->insert([
+                    'key_name'      => $key_name,
+                    'live_values'   => $payload,
+                    'test_values'   => $payload,
+                    'settings_type' => 'sms_config',
+                    'mode'          => 'test',
+                    'is_active'     => 0,
+                    'created_at'    => now(),
+                    'updated_at'    => now(),
+                ]);
+            }
+        }
+
+        $data_values = Setting::where('settings_type', 'sms_config')
+            ->whereIn('key_name', array_keys($whitelist))
+            ->get() ?? [];
+
+        return view('admin-views.business-settings.sms-index', compact('data_values', 'published_status', 'payment_url'));
     }
 
     public function sms_update(Request $request, $module)
@@ -82,6 +166,25 @@ class SMSModuleController extends Controller
                 'sender_id' =>$request['sender_id'] ?? null,
                 'otp_template' =>$request['otp_template'],
             ];
+        } elseif ($module == 'message_central') {
+            // Server-side validation for Message Central fields.
+            // Operator-set fields only: customer_id, auth_token, country_code, otp_template.
+            // senderId and otpLength are hard-coded in the provider method (no operator control).
+            $request->validate([
+                'status'        => 'required|in:0,1',
+                'customer_id'   => 'required|string|max:191',
+                'auth_token'    => 'required|string|max:255',
+                'country_code'  => 'required|string|max:10',
+                'otp_template'  => 'required|string|max:1000',
+            ]);
+
+            $additional_data = [
+                'status'        => $request['status'],
+                'customer_id'   => $request['customer_id'],
+                'auth_token'    => $request['auth_token'],
+                'country_code'  => $request['country_code'],
+                'otp_template'  => $request['otp_template'],
+            ];
         }
 
         $data= ['gateway' => $module ,
@@ -99,7 +202,7 @@ class SMSModuleController extends Controller
     ]);
 
     if ($request['status'] == 1) {
-        foreach (['twilio','nexmo','2factor','msg91','alphanet_sms'] as $gateway) {
+        foreach (['twilio','nexmo','2factor','msg91','alphanet_sms','message_central'] as $gateway) {
             if ($module != $gateway) {
                 $keep = Setting::where(['key_name' => $gateway, 'settings_type' => 'sms_config'])->first();
                 if (isset($keep)) {
