@@ -13,8 +13,7 @@ return [
     |
     | To learn more: https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS
     |
-     'allowed_origins' => ['*'],
-   */
+    */
 
 	'paths' => ['api/*', 'sanctum/csrf-cookie'],
 

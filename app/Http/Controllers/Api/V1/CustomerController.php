@@ -29,7 +29,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rules\Password;
-use Modules\Gateways\Traits\SmsGateway;
+use App\Traits\SmsGateway;
 use MatanYadaev\EloquentSpatial\Objects\Point;
 use Modules\RideShare\Entities\ReviewModule\RideReview;
 use Illuminate\Support\Facades\Log;
@@ -672,25 +672,20 @@ class CustomerController extends Controller
     private function verification_check($phone)
     {
         $otp_interval_time = 60; //seconds
-        $verification_data = DB::table('phone_verifications')->where('phone', $phone)->first();
+        // SECURITY: use the canonical phone form so resend/lookup and the
+        // matching verify-time lookup hit the same row regardless of how
+        // Flutter formatted the value ("+1347...", "1347...", "+1 347...").
+        $normalizedPhone = $this->normalizePhoneForVerificationLocal((string) $phone);
+        $verification_data = DB::table('phone_verifications')->where('phone', $normalizedPhone)->first();
         if (isset($verification_data) &&  \Carbon\Carbon::parse($verification_data->updated_at)->DiffInSeconds() < $otp_interval_time) {
             $time = $otp_interval_time - Carbon::parse($verification_data->updated_at)->DiffInSeconds();
             return ['is_success' => false,  'message' => translate('messages.please_try_again_after_') . $time . ' ' . translate('messages.seconds'), 'code' => 403];
         }
 
         $otp = rand(100000, 999999);
-        if(getEnvMode() == 'test'){
+        if (getEnvMode() === 'demo') {
             $otp = '123456';
         }
-        DB::table('phone_verifications')->updateOrInsert(
-            ['phone' => $phone],
-            [
-                'token' => $otp,
-                'otp_hit_count' => 0,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]
-        );
 
         $published_status = 0;
         $payment_published_status = config('get_payment_publish_status');
@@ -698,12 +693,137 @@ class CustomerController extends Controller
             $published_status = $payment_published_status[0]['is_published'];
         }
 
-        if ($published_status == 1) {
+        // -----------------------------------------------------------------
+        // Message Central VerifyNow glue
+        // -----------------------------------------------------------------
+        // When Message Central is the active provider we use the rich
+        // message_central_send() helper that returns the provider envelope
+        // (verificationId, transactionId, etc.).  We persist those fields
+        // on the phone_verifications row so the verify-side controller can
+        // look them up later — without ever exposing them to Flutter.
+        //
+        // For every other provider the legacy SmsGateway::send() / SMS_module::send()
+        // string-returning path is used unchanged.
+        $verificationId = null;
+        $transactionId  = null;
+        $referenceId    = null;
+        $flowType       = null;
+
+        if ($published_status == 1 && SmsGateway::is_message_central_active()) {
+            $sendResult = SmsGateway::message_central_send($phone, $otp);
+            $response   = ($sendResult['status'] ?? 'error') === 'success' ? 'success' : 'error';
+
+            // Only persist provider metadata when Message Central actually
+            // accepted the send.  If the responseCode was not 200/SUCCESS we
+            // MUST NOT save a phantom verificationId — that would either
+            // point at a non-existent verification on MC (causing verify-time
+            // errors) or, worse, leave a half-baked row that the user could
+            // try to verify against later.
+            if ($response === 'success') {
+                $verificationId = $sendResult['verification_id'] ?? null;
+                $transactionId  = $sendResult['transaction_id']  ?? null;
+                $referenceId    = $sendResult['reference_id']    ?? null;
+                $flowType       = $sendResult['flow_type']       ?? null;
+            } else {
+                // Force everything to NULL so we never store a partial id.
+                $verificationId = null;
+                $transactionId  = null;
+                $referenceId    = null;
+                $flowType       = null;
+            }
+
+            try {
+                Log::info('OTP send (Message Central)', [
+                    'phone_last4'   => substr((string) preg_replace('/\D+/', '', $phone), -4),
+                    'http_status'   => $sendResult['http_status'] ?? 0,
+                    'status'        => $sendResult['status'] ?? 'unknown',
+                    'has_verif_id'  => !empty($verificationId),
+                    'ts'            => now()->toIso8601String(),
+                ]);
+            } catch (\Throwable $t) {
+                // never break the send flow
+            }
+        } elseif ($published_status == 1) {
             $response = SmsGateway::send($phone, $otp);
         } else {
             $response = SMS_module::send($phone, $otp);
         }
-        if (getEnvMode() != 'test' && $response !== 'success') {
+
+        // Normalize the phone so the row key matches what the verify path
+        // will look up.  This way "967777363554", "+967777363554" and
+        // "+967 777 363 554" all resolve to the same record.
+        $normalizedPhone = $this->normalizePhoneForVerificationLocal($phone);
+
+        // Upsert the row with whatever provider metadata we collected.
+        // The phone is stored in the existing `phone` column (canonical form
+        // "+CountryCode + mobileNumber") — we never duplicate it.
+        //
+        // IMPORTANT: every column we reference here MUST already exist in
+        // the schema.  If the operator has not yet run
+        //     php artisan migrate
+        // the INSERT will throw QueryException → the call would fail
+        // silently before this change, leaving no phone_verifications row.
+        //
+        // We now log loudly + gracefully fall back to the legacy 3-column
+        // write when the new columns are absent, so the SMS is never lost.
+        try {
+            DB::table('phone_verifications')->updateOrInsert(
+                ['phone' => $normalizedPhone],
+                [
+                    'token'           => $otp,
+                    'otp_hit_count'   => 0,
+                    'is_verified'     => 0,
+                    'verified_at'     => null,
+                    'verification_id' => $verificationId,
+                    'transaction_id'  => $transactionId,
+                    'reference_id'    => $referenceId,
+                    'flow_type'       => $flowType,
+                    'created_at'      => now(),
+                    'updated_at'      => now(),
+                ]
+            );
+        } catch (\Throwable $writeError) {
+            // The new columns may not exist yet on this server.  Log loudly
+            // and retry with ONLY the legacy columns so the OTP row is
+            // preserved (and the user can still verify locally).  After
+            // running `php artisan migrate` the new code path activates.
+            try {
+                Log::error('OTP row write (full columns) failed, retrying with legacy columns', [
+                    'phone_last4' => substr((string) preg_replace('/\D+/', '', $normalizedPhone), -4),
+                    'error'       => $writeError->getMessage(),
+                ]);
+            } catch (\Throwable $t) {
+            }
+
+            DB::table('phone_verifications')->updateOrInsert(
+                ['phone' => $normalizedPhone],
+                [
+                    'token'         => $otp,
+                    'otp_hit_count' => 0,
+                    'created_at'    => now(),
+                    'updated_at'    => now(),
+                ]
+            );
+        }
+
+        // Always emit a confirmation log so the operator can verify the
+        // write actually happened (especially useful when the migration
+        // hasn't been run yet).
+        try {
+            $written = DB::table('phone_verifications')
+                ->where('phone', $normalizedPhone)
+                ->first();
+            Log::info('OTP row persisted', [
+                'phone_last4'   => substr((string) preg_replace('/\D+/', '', $normalizedPhone), -4),
+                'has_verif_id'  => !empty($written->verification_id ?? null),
+                'has_token'     => !empty($written->token        ?? null),
+                'is_verified'   => (int) ($written->is_verified ?? 0),
+            ]);
+        } catch (\Throwable $t) {
+            // never block the send flow
+        }
+
+        if (getEnvMode() !== 'demo' && $response !== 'success') {
             return ['is_success' => false,  'message' => translate('failed_to_send_otp'), 'code' => 403];
         }
         return  ['is_success' => true,  'message' => translate('OTP_successfully_send'), 'code' => 200];
@@ -711,7 +831,7 @@ class CustomerController extends Controller
     private function verification_check_email($data)
     {
         $otp = rand(100000, 999999);
-        if(getEnvMode() == 'test'){
+        if (getEnvMode() === 'demo') {
             $otp = '123456';
         }
         DB::table('email_verifications')->updateOrInsert(
@@ -735,7 +855,7 @@ class CustomerController extends Controller
             info($ex->getMessage());
             $mailResponse = null;
         }
-        if (getEnvMode() != 'test' && $mailResponse !== 'success') {
+        if (getEnvMode() !== 'demo' && $mailResponse !== 'success') {
             return  ['is_success' => false,  'message' => translate('failed_to_send_mail'), 'code' => 403];
         }
         return  ['is_success' => true,  'message' => translate('OTP_successfully_send_to_mail'), 'code' => 200];
@@ -892,6 +1012,26 @@ class CustomerController extends Controller
         return  ['is_success' => false, 'verification_medium' => 'SMS', 'message' => translate('OTP_does_not_match!!!'), 'code' => 403];
     }
 
+
+    /**
+     * Canonicalize the phone to "+CountryCode + mobileNumber" so that the
+     * row written here matches the row looked up by
+     * CustomerAuthController::normalizePhoneForVerification().
+     */
+    private function normalizePhoneForVerificationLocal(string $phone): string
+    {
+        $config = SmsGateway::get_settings('message_central');
+        $digits = preg_replace('/\D+/', '', $phone);
+
+        if (is_array($config) && !empty($config['country_code'])) {
+            $cc = ltrim((string) $config['country_code'], '+');
+            if ($cc !== '' && strpos($digits, $cc) === 0) {
+                $digits = substr($digits, strlen($cc));
+            }
+        }
+
+        return $digits === '' ? '' : ('+' . $digits);
+    }
 
     public function getCustomer(Request $request)
     {

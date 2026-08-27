@@ -235,6 +235,7 @@ if (!$is_published) {
 }
 
 
+
 //Restaurant Registration
 Route::group(['prefix' => 'vendor', 'as' => 'restaurant.'], function () {
     Route::get('apply', 'VendorController@create')->name('create');

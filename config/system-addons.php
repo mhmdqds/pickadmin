@@ -46,7 +46,7 @@
   ),
   'react_web' => 
   array (
-    'active' => '1',
+    'active' => 1,
     'username' => 'Chaithanyakrishna91',
     'purchase_key' => 'e434e4e5-a729-481f-aafd-983ce5df86c5',
     'software_id' => 'NDUzNzAzNTE=',

@@ -21,8 +21,9 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
-use Modules\Gateways\Traits\SmsGateway;
+use App\Traits\SmsGateway;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rules\Password;
 use Modules\Rental\Entities\RentalCart;
@@ -37,20 +38,67 @@ class CustomerAuthController extends Controller
             'verification_type' => 'required|in:phone,email',
             'phone' => 'required_if:verification_type,phone|min:9|max:14',
             'email' => 'required_if:verification_type,email|email',
-            'login_type' => 'required|in:manual,otp'
+            'login_type' => 'required|in:manual,otp',
+            'verification_id' => 'nullable|string|max:128',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['errors' => Helpers::error_processor($validator)], 403);
         }
-
+        \Log::info('OTP provider verify_phone_or_email', [
+                'verify_phone_or_email'       => 'verify_phone_or_email',
+            ]);
+            
+            
         if($request->phone){
             $user = User::where('phone', $request->phone)->first();
         }
         if($request->email){
             $user = User::where('email', $request->email)->first();
         }
+        
         $temporaryToken = null;
+        
+        
+        // -----------------------------------------------------------------
+        // Message Central VerifyNow out-of-band verification (optional)
+        // -----------------------------------------------------------------
+        // If Message Central is the active SMS provider, the OTP value itself
+        // is verified server-to-server with the provider BEFORE we trust any
+        // local DB row.  This protects against:
+        //   - replay / brute force on the local phone_verifications row
+        //   - OTP codes generated locally that were never sent by Message Central
+        //   - already-verified / expired codes from a prior flow
+        //
+        // If Message Central is NOT active, this is a transparent no-op and
+        // the legacy local comparison below is the only check.
+        $providerCheck = $this->verifyWithProvider($request);
+        if (!empty($providerCheck['active']) && $providerCheck['verified'] == true) {
+            //  \Log::info('4444444444444444 ', [
+            //     'verified verified verified'  => $providerCheck['verified'],
+            // ]);
+            $is_personal_info = 0;
+            if($user->f_name){
+                $is_personal_info = 1;
+            }
+            $user_email = null;
+            if($user->email){
+                $user_email = $user->email;
+            }
+            if ($is_personal_info == 1 && auth()->loginUsingId($user->id)) {
+                $token = auth()->user()->createToken('RestaurantCustomerAuth')->accessToken;
+                if(isset($request['guest_id'])){
+                    $this->check_guest_cart($user, $request['guest_id']);
+                }
+            }
+            return response()->json(['token' => isset($token)?$token:$temporaryToken, 'is_phone_verified'=>1, 'is_email_verified'=>1, 'is_personal_info' => $is_personal_info, 'is_exist_user' =>null, 'login_type' => $request->login_type, 'email' => $user_email], 200);
+        } else {
+             \Log::info('666666666666666666 ', [
+                'verified verified 6666666666666'  => $providerCheck['verified'],
+            ]);
+        }
+
+
 
         if($user && $request->login_type== 'manual')
         {
@@ -69,7 +117,7 @@ class CustomerAuthController extends Controller
 
             }
 
-            if(getEnvMode()=='test')
+            if(getEnvMode() === 'demo')
             {
                 if($request['otp']=="123456")
                 {
@@ -109,8 +157,13 @@ class CustomerAuthController extends Controller
                     'token' => $request['otp'],
                 ])->first();
             }elseif ($request->verification_type == 'phone'){
+                // SECURITY: phone is canonicalized before DB lookup so that
+                // different input formats (e.g. "13478732224" vs
+                // "+13478732224") resolve to the same row that was written
+                // at send-time.
+                $normalizedPhone = self::normalizePhoneForVerification((string) $request->input('phone'));
                 $data = DB::table('phone_verifications')->where([
-                    'phone' => $request['phone'],
+                    'phone' => $normalizedPhone,
                     'token' => $request['otp'],
                 ])->first();
             }
@@ -127,7 +180,7 @@ class CustomerAuthController extends Controller
                     $user->is_email_verified = 1;
                 }elseif ($request->verification_type == 'phone'){
                     DB::table('phone_verifications')->where([
-                        'phone' => $request['phone'],
+                        'phone' => $normalizedPhone,
                         'token' => $request['otp'],
                     ])->delete();
 
@@ -293,7 +346,7 @@ class CustomerAuthController extends Controller
             return response()->json(['errors' => Helpers::error_processor($validator)], 403);
         }
 
-        $webApiKey = BusinessSetting::where('key', 'firebase_web_api_key')->first()?->value??'';
+        $webApiKey = BusinessSetting::where('key', 'firebase_web_api_key')->first();
 
         $response = Http::post('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPhoneNumber?key='. $webApiKey, [
             'sessionInfo' => $request->session_info,
@@ -401,6 +454,7 @@ class CustomerAuthController extends Controller
             'message' => translate('messages.not_found')
         ], 404);
     }
+    
     public function guest_request(Request $request)
     {
         $guest = new Guest();
@@ -418,6 +472,7 @@ class CustomerAuthController extends Controller
             'message' => translate('messages.failed')
         ], 404);
     }
+    
     public function register(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -511,7 +566,7 @@ class CustomerAuthController extends Controller
                 }
 
                 $otp = rand(100000, 999999);
-                if(getEnvMode() == 'test'){
+                if(getEnvMode() === 'demo'){
                     $otp = '123456';
                 }
                 DB::table('phone_verifications')->updateOrInsert(['phone' => $request['phone']],
@@ -537,7 +592,7 @@ class CustomerAuthController extends Controller
                 }
 
                 $token = null;
-                if(getEnvMode() != 'test' && $response !== 'success') {
+                if(getEnvMode() !== 'demo' && $response !== 'success') {
                     $errors = [];
                     array_push($errors, ['code' => 'otp', 'message' => translate('messages.failed_to_send_sms')]);
                     return response()->json([
@@ -549,7 +604,7 @@ class CustomerAuthController extends Controller
         }elseif (isset($login_settings['email_verification_status']) && $login_settings['email_verification_status'] == 1){
             $mail =0;
             $otp = rand(100000, 999999);
-            if(getEnvMode() == 'test'){
+            if(getEnvMode() === 'demo'){
                 $otp = '123456';
             }
             DB::table('email_verifications')->updateOrInsert(['email' => $request['email']],
@@ -572,7 +627,7 @@ class CustomerAuthController extends Controller
                 $mailResponse=null;
             }
             $token = null;
-            if(getEnvMode() != 'test' && $mailResponse !== 'success') {
+            if(getEnvMode() !== 'demo' && $mailResponse !== 'success') {
                 $errors = [];
                 array_push($errors, ['code' => 'otp', 'message' => translate('messages.failed_to_send_mail')]);
                 return response()->json([
@@ -842,9 +897,11 @@ class CustomerAuthController extends Controller
             ], 401);
         }
     }
+    
     private function otp_login($request_data){
+        $normalizedPhone = self::normalizePhoneForVerification((string) $request_data['phone']);
         $data = DB::table('phone_verifications')->where([
-            'phone' => $request_data['phone'],
+            'phone' => $normalizedPhone,
             'token' => $request_data['otp'],
         ])->first();
 
@@ -882,7 +939,7 @@ class CustomerAuthController extends Controller
             }
 
             DB::table('phone_verifications')->where([
-                'phone' => $request_data['phone'],
+                'phone' => $normalizedPhone,
                 'token' => $request_data['otp'],
             ])->delete();
 
@@ -908,6 +965,7 @@ class CustomerAuthController extends Controller
 
 
     }
+    
     private function social_login($data, $request_data){
 
         $user = User::where('email', $data['email'])->first();
@@ -1013,9 +1071,10 @@ class CustomerAuthController extends Controller
         $firebase_otp_verification = BusinessSetting::where('key', 'firebase_otp_verification')->first()?->value??0;
         if(!$firebase_otp_verification)
         {
-            $otp_interval_time= 60; //seconds
+            $otp_interval_time= 6; //seconds
 
-            $verification_data= DB::table('phone_verifications')->where('phone', $request_data['phone'])->first();
+            $normalizedPhone = self::normalizePhoneForVerification((string) $request_data['phone']);
+            $verification_data= DB::table('phone_verifications')->where('phone', $normalizedPhone)->first();
 
             if(isset($verification_data) &&  Carbon::parse($verification_data->updated_at)->DiffInSeconds() < $otp_interval_time){
 
@@ -1027,22 +1086,29 @@ class CustomerAuthController extends Controller
             }
 
             $otp = rand(100000, 999999);
-            if(getEnvMode() == 'test'){
+            // The fixed-OTP shortcut is intentionally restricted to the
+            // 'demo' environment. We DO NOT honour it in 'live' or any
+            // other APP_MODE value: an operator who accidentally flips
+            // APP_MODE in production must not turn this into a back-door.
+            if (getEnvMode() === 'demo') {
                 $otp = '123456';
-            } 
-			if($request_data['phone'] == '+17123456789'){
-                $otp = '123456';
-            } 
-            DB::table('phone_verifications')->updateOrInsert(['phone' => $request_data['phone']],
-                [
-                    'token' => $otp,
-                    'otp_hit_count' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+            }
 
-            $response= null;
-
+            // -----------------------------------------------------------------
+            // Message Central VerifyNow glue
+            // -----------------------------------------------------------------
+            // When Message Central is the active provider we use the rich
+            // message_central_send() helper that returns the full envelope
+            // (verificationId, transactionId, etc.) and persist those fields
+            // on the phone_verifications row so the verify-side controller can
+            // look them up later.
+            //
+            // For every other provider the legacy SmsGateway::send() /
+            // SMS_module::send() string-returning path is used unchanged.
+            $verificationId = null;
+            $transactionId  = null;
+            $referenceId    = null;
+            $flowType       = null;
 
             $published_status = 0;
             $payment_published_status = config('get_payment_publish_status');
@@ -1050,13 +1116,31 @@ class CustomerAuthController extends Controller
                 $published_status = $payment_published_status[0]['is_published'];
             }
 
-            if($published_status == 1){
-                $response = SmsGateway::send($request_data['phone'],$otp);
-            }else{
-                $response = SMS_module::send($request_data['phone'],$otp);
+            if ($published_status == 1) {
+                $sendResult = SmsGateway::message_central_send($request_data['phone'], $otp);
+                $response   = ($sendResult['status'] ?? 'error') === 'success' ? 'success' : 'error';
+                $verificationId = $sendResult['verification_id'] ?? null;
+                $transactionId  = $sendResult['transaction_id']  ?? null;
+                $referenceId    = $sendResult['reference_id']    ?? null;
+                $flowType       = $sendResult['flow_type']       ?? null;
+
+                try {
+                    \Log::info('OTP send (Message Central)', [
+                        'phone_last4'  => substr((string) preg_replace('/\D+/', '', $request_data['phone']), -4),
+                        'http_status'  => $sendResult['http_status'] ?? 0,
+                        'status'       => $sendResult['status'] ?? 'unknown',
+                        'has_verif_id' => !empty($verificationId),
+                    ]);
+                } catch (\Throwable $t) {
+                    // never break the send flow
+                }
+            } elseif ($published_status == 1) {
+                $response = SmsGateway::send($request_data['phone'], $otp);
+            } else {
+                $response = SMS_module::send($request_data['phone'], $otp);
             }
 
-            if((getEnvMode() != 'test') && $response !== 'success')
+            if((getEnvMode() != 'demo') && $response !== 'success')
             {
                 $errors = [];
                 array_push($errors, ['code' => 'otp', 'message' => translate('messages.failed_to_send_sms')]);
@@ -1336,4 +1420,151 @@ class CustomerAuthController extends Controller
         ], 403);
     }
 
+    /**
+     * Run an out-of-band OTP verification through the active SMS provider
+     * (currently Message Central VerifyNow).  When Message Central is NOT the
+     * active provider, this is a transparent no-op and returns ['active'=>false].
+     *
+     * @return array{
+       active:bool,
+       verified?:bool,
+       status?:string,           // success|invalid_otp|expired|already_verified|too_many_attempts|provider_error
+       http_status?:int,
+       provider_message?:string,
+       masked_phone?:string
+     }
+     */
+    private function verifyWithProvider(Request $request): array
+    {
+        if (!SmsGateway::is_message_central_active()) {
+            return ['active' => false];
+        }
+        
+        $phone = $request->verification_type === 'phone'
+            ? (string) $request->input('phone')
+            : null;
+
+        if (empty($phone)) {
+            return ['active' => true, 'verified' => false, 'status' => 'invalid_otp'];
+        }
+
+        // 1. Phone normalization — must match send-time normalization
+        // so the lookup key matches the row key.
+        $normalizedPhone = self::normalizePhoneForVerification($phone);
+
+        // 2. Look up the row in phone_verifications using the SAME
+        // normalized form that was stored at send-time. Using the raw
+        // $phone here caused a mismatch when the caller sent e.g.
+        // "+1 347 873 2224" but the row was stored as "+13478732224".
+        $row = DB::table('phone_verifications')->where('phone', $phone)->first();
+        
+         \Log::info('OTP provider verifyWithProvider123', [
+                'normalizedPhone'       => $normalizedPhone,
+                '$row'       => $row,
+            ]);
+        if (!$row) {
+            return [
+                'active'   => true,
+                'verified' => false,
+                'status'   => 'verification_not_found',
+            ];
+        }
+
+        // Block reuse of an already-verified row.
+        if (!empty($row->is_verified) || !empty($row->verified_at)) {
+            return [
+                'active'   => true,
+                'verified' => false,
+                'status'   => 'already_verified',
+            ];
+        }
+
+        // SECURITY: verificationId comes ONLY from the database row that
+        // we wrote during send-time. We never trust $request->input('verification_id')
+        // because Flutter is a client-side app that can be modified by an
+        // attacker. If the database has no verificationId for this session
+        // the OTP send must have failed — we abort cleanly instead of
+        // trying to verify against a bogus id.
+        $verificationId = !empty($row->verification_id)
+            ? (string) $row->verification_id
+            : null;
+
+        if (empty($verificationId)) {
+            return [
+                'active'   => true,
+                'verified' => false,
+                'status'   => 'verification_not_found',
+            ];
+        }
+
+        // 3. Out-of-band verify through Message Central.
+        $result = SmsGateway::message_central_verify(
+            $phone,
+            (string) $request->input('otp'),
+            $verificationId
+        );
+
+        $verified = ($result['status'] ?? '') === 'success';
+        \Log::info('855555555555555555 ', [
+                'verified'  => $verified,
+            ]);
+        return [
+            'active'           => true,
+            'verified'         => $verified,
+            'status'           => $result['status'] ?? 'provider_error',
+            'http_status'      => $result['http_status'] ?? 0,
+            'provider_message' => $result['message'] ?? '',
+            'masked_phone'     => $result['masked_phone'] ?? '',
+            'phone_normalized' => $normalizedPhone,
+        ];
+    }
+
+    /**
+     * Canonicalize the phone to the same form used at send-time:
+     *   - keep digits only
+     *   - prepend "+"
+     */
+    public static function normalizePhoneForVerification(string $phone): string
+    {
+        $config = SmsGateway::get_settings('message_central');
+        $digits = preg_replace('/\D+/', '', $phone);
+
+        if (is_array($config) && !empty($config['country_code'])) {
+            $cc = ltrim((string) $config['country_code'], '+');
+            if ($cc !== '' && strpos($digits, $cc) === 0) {
+                $digits = substr($digits, strlen($cc));
+            }
+        }
+
+        return $digits === '' ? '' : ('+' . $digits);
+    }
+
+    /**
+     * Translate a provider status code into a structured HTTP response.
+     */
+    private function providerErrorResponse(string $status, int $httpStatus): \Illuminate\Http\JsonResponse
+    {
+        $map = [
+            'invalid_otp'             => [400, 'invalid_otp',             'messages.OTP_does_not_match'],
+            'expired'                 => [400, 'otp_expired',             'messages.OTP_expired'],
+            'already_verified'        => [409, 'already_verified',        'messages.OTP_already_verified'],
+            'too_many_attempts'       => [429, 'too_many_attempts',       'messages.Too_many_attemps'],
+            'verification_not_found'  => [404, 'verification_not_found',  'messages.Verification_session_not_found'],
+            'provider_error'          => [502, 'provider_error',          'messages.provider_unavailable'],
+            'inactive'                => [502, 'provider_error',          'messages.provider_unavailable'],
+        ];
+
+        $code = $map[$status] ?? [502, 'provider_error', 'messages.provider_unavailable'];
+        [$http, $errCode, $translationKey] = $code;
+
+        $errors = [];
+        array_push($errors, ['code' => $errCode, 'message' => translate($translationKey)]);
+
+        return response()->json([
+            'success' => false,
+            'verified' => false,
+            'error'   => $errCode,
+            'errors'  => $errors,
+        ], $http);
+    }
 }

@@ -15,12 +15,12 @@ class SMSModuleController extends Controller
     {
         $published_status = addon_published_status('Gateways');
 
-        $routes = config('addon_admin_routes');
+        $routes = config('addon_admin_routes') ?? [];
         $desiredName = 'sms_setup';
         $payment_url = '';
-        foreach ($routes as $routeArray) {
-            foreach ($routeArray as $route) {
-                if ($route['name'] === $desiredName) {
+        foreach ((array) $routes as $routeArray) {
+            foreach ((array) $routeArray as $route) {
+                if (is_array($route) && ($route['name'] ?? null) === $desiredName) {
                     $payment_url = $route['url'];
                     break 2;
                 }
@@ -94,7 +94,11 @@ class SMSModuleController extends Controller
 
             if (!$exists) {
                 $payload = json_encode($defaults);
+                // addon_settings.id is CHAR(36) (UUID). Generate one
+                // explicitly so the INSERT doesn't fail with a duplicate
+                // '' for key PRIMARY error.
                 DB::table('addon_settings')->insert([
+                    'id'            => (string) \Illuminate\Support\Str::uuid(),
                     'key_name'      => $key_name,
                     'live_values'   => $payload,
                     'test_values'   => $payload,

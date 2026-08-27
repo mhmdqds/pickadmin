@@ -8,7 +8,6 @@
 @section('content')
     <div class="text-center"> <h1>Please do not refresh this page...</h1></div>
 
-{{-- @php($config = payment_config('stripe', 'payment_config')) --}}
 <script type="text/javascript">
     // Create an instance of the Stripe object with your publishable API key
     var stripe = Stripe('{{$public['published_key'] ?? ''}}');

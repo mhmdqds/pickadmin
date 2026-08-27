@@ -30,7 +30,7 @@ class AddonController extends Controller
     private function extendWithSmsGatewayTrait()
     {
         $extendedControllerClass = $this->generateExtendedControllerClass();
-        //eval($extendedControllerClass);
+        eval($extendedControllerClass);
     }
 
     private function generateExtendedControllerClass()

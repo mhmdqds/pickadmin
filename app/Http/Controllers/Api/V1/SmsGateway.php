@@ -658,10 +658,6 @@ trait  SmsGateway
      */
     public static function message_central_send($receiver, $otp)
     {
-        
-         \Log::info('OTP provider 11111 receiver', [
-                '$receiver'       => $receiver,
-            ]);
         $config = self::get_settings('message_central');
         $result = [
             'status'         => 'error',
@@ -769,39 +765,7 @@ trait  SmsGateway
             $result['error']           = null;
             return $result;
         }
-        
-            $data = $decoded['data'] ?? [];
-    
-    $verificationId = $data['verificationId'] ?? null;
-    
-    if (!empty($verificationId)) {
-    
-        DB::table('phone_verifications')->updateOrInsert(
-    
-            [
-                'phone' => $receiver
-            ],
-    
-            [
-                'token'            => $otp,
-                'verification_id'  => $verificationId,
-                'transaction_id'   => $data['transactionId'] ?? null,
-                'reference_id'     => $data['referenceId'] ?? null,
-                'flow_type'        => $data['flowType'] ?? 'SMS',
-                'is_verified'      => 0,
-                'verified_at'      => null,
-                'updated_at'       => now(),
-    
-                // إذا كان السجل جديد
-                'created_at'       => now(),
-            ]
-        );
-    
-        $result['verification_id'] = $verificationId;
-        $result['transaction_id'] = $data['transactionId'] ?? null;
-        $result['reference_id'] = $data['referenceId'] ?? null;
-        $result['flow_type'] = $data['flowType'] ?? 'SMS';
-    }
+                info('MessageCentral SMS send failed: ' . $result['verification_id']);
 
         $result['error'] = is_array($decoded)
             ? ($decoded['errorMessage'] ?? $decoded['message'] ?? 'unknown_error')
@@ -821,23 +785,17 @@ trait  SmsGateway
      * Verify OTP via Message Central VerifyNow API.
      *
      * Endpoint (per Message Central official documentation):
-     *   GET https://cpaas.messagecentral.com/verification/v3/validateOtp
+     *   GET https://cpaas.messagecentral.com/veri_cation/v3/validateOtp
      *     ?verificationId=<id>&code=<OTP>&countryCode=<cc>&mobileNumber=<num>
      *   Headers:
      *     authToken: <JWT>
      *
      * Return shape:
-     *   ['status' => success|invalid_otp|expired|already_verified|too_many_attempts|provider_error|inactive,
+     *   ['status' => success|invalid_otp|expired|already_verified|too_many_attempts|provider_error,
      *    'http_status' => int, 'response' => array|null,
      *    'message' => string, 'masked_phone' => string]
      *
      * The OTP value, authToken and any API secret are NEVER logged.
-     *
-     * SECURITY: $verificationId MUST come from Message Central. We never
-     * fabricate a local id. When the parameter is missing or empty we
-     * return status='provider_error' with message='missing_verification_id'
-     * so the caller can react properly (the legacy local-comparison flow
-     * is not bypassed by a fabricated id).
      */
     public static function message_central_verify($phone, $otp, $verificationId = null)
     {
@@ -848,40 +806,21 @@ trait  SmsGateway
             'message'      => 'Unknown error',
             'masked_phone' => $phone ? (string) substr(preg_replace('/\D+/', '', $phone), -4) : '',
         ];
-        
-         \Log::info('OTP provider verification', [
-                '$otp'  => $otp,
-                '$phone'  => $phone,
-                'verificationId'       => $verificationId,
-            ]);
 
         try {
             $config = self::get_settings('message_central');
 
-            // SECURITY: Provider not configured or not active.
-            //
-            // Previously this returned status='success' so the legacy local
-            // flow ran unchanged. That is DANGEROUS in the new architecture
-            // because verifyWithProvider() short-circuits on
-            // $providerCheck['active'] and treats status='success' as
-            // "provider already verified the OTP" — which would let the
-            // user log in without any real verification.
-            //
-            // The correct contract is: this helper ONLY talks to Message
-            // Central. The "is this provider active?" check belongs to the
-            // caller (verifyWithProvider) via is_message_central_active().
-            // We therefore return a neutral 'inactive' status so the caller
-            // can decide to skip the provider check entirely and fall back
-            // to the legacy local-comparison flow.
+            // Provider not configured or not active → return success so legacy
+            // (local) verification paths still run. Callers must still verify
+            // the OTP against the local DB.
             if (!$config || (int) ($config['status'] ?? 0) !== 1) {
-                $normalized['status']  = 'inactive';
+                $normalized['status']  = 'success';
                 $normalized['message'] = 'message_central_inactive';
-                $normalized['http_status'] = 0;
                 return $normalized;
             }
 
             $auth_token   = $config['auth_token']   ?? null;
-            $country_code = $config['country_code'] ?? 1;
+            $country_code = $config['country_code'] ?? null;
 
             if (empty($auth_token)) {
                 $normalized['message'] = 'message_central_misconfigured';
@@ -898,25 +837,14 @@ trait  SmsGateway
             }
             $mobile = $digits;
 
-            // SECURITY: The verificationId MUST come from Message Central
-            // (saved in phone_verifications.verification_id at send-time).
-            // We never fabricate a local id. If it's missing, the caller
-            // (verifyWithProvider) is responsible for rejecting the request
-            // BEFORE we ever reach the provider — so by the time we are
-            // here, $verificationId MUST be present.
-            if (empty($verificationId)) {
-                $normalized['status']  = 'provider_error';
-                $normalized['message'] = 'missing_verification_id';
-                return $normalized;
-            }
+            // If no verificationId is supplied, fall back to a deterministic
+            // local id derived from the phone + first 2 chars of the OTP. This
+            // keeps the signature compatible with VerifyNow without forcing a
+            // schema change for the existing Message-Now style integration.
+            $vId = $verificationId ?: ('local-' . md5($mobile . '|' . substr((string) $otp, 0, 2)));
 
-            // Correct Message Central Validate OTP endpoint
-            // (per Message Central CPaaS documentation v3):
-            //   GET https://cpaas.messagecentral.com/verification/v3/validateOtp
-            //   Query params: verificationId, code, countryCode, mobileNumber
-            //   Header:       authToken: <jwt>
-            $url = 'https://cpaas.messagecentral.com/verification/v3/validateOtp'
-                 . '?verificationId=' . urlencode((string) $verificationId)
+            $url = 'https://cpaas.messagecentral.com/veri_cation/v3/validateOtpOtp'
+                 . '?verificationId=' . urlencode((string) $vId)
                  . '&code='          . urlencode((string) $otp)
                  . '&countryCode='   . urlencode((string) $country_code)
                  . '&mobileNumber='  . urlencode((string) $mobile);
@@ -941,22 +869,72 @@ trait  SmsGateway
             $http = curl_getinfo($curl, CURLINFO_HTTP_CODE);
             $err  = curl_error($curl);
             curl_close($curl);
-            
-            $data = json_decode((string) $raw, true);
-            
-            \Log::info('OTTP OTTP OTTP OTTP ', [
-                'raw'  => $raw,
-                'verificationId'       => $verificationId,
-                'mobile'           => $mobile,
-                'data'           => $data,
-            ]);
-            return [
-                'status'  => ($http === 200 && ($data['responseCode'] ?? null) == 200)
-                    ? 'success'
-                    : 'failed',
-                'message' => $data['message'] ?? null,
-            ];
-      
+
+            $normalized['http_status'] = (int) $http;
+
+            if ($raw === false || !empty($err)) {
+                $normalized['status']  = 'provider_error';
+                $normalized['message'] = 'transport_error';
+                return $normalized;
+            }
+
+            $decoded = json_decode((string) $raw, true);
+            $normalized['response'] = is_array($decoded) ? $decoded : null;
+
+            $responseCode = is_array($decoded) ? ($decoded['responseCode'] ?? null) : null;
+            $msg          = is_array($decoded) ? ($decoded['message']      ?? null) : null;
+            $errMsg       = is_array($decoded) ? ($decoded['errorMessage'] ?? null) : null;
+
+            // Documented response codes mapping:
+            //   200  → VERIFICATION_COMPLETED (verified)
+            //   400/403 → INVALID_CODE       (invalid_otp)
+            //   401  → EXPIRED               (expired)
+            //   404  → INVALID_VERIFICATION_ID (invalid_otp)
+            //   409  → ALREADY_VERIFIED      (already_verified)
+            //   429  → TOO_MANY_ATTEMPTS     (too_many_attempts)
+            //   5xx  → provider_error
+            $httpInt = (int) $http;
+            $codeInt = is_numeric($responseCode) ? (int) $responseCode : null;
+
+            if ($httpInt === 200 && ($codeInt === 200 || strcasecmp((string) $msg, 'VERIFICATION_COMPLETED') === 0 || strcasecmp((string) $msg, 'SUCCESS') === 0)) {
+                $normalized['status']  = 'success';
+                $normalized['message'] = (string) ($msg ?? 'VERIFICATION_COMPLETED');
+                return $normalized;
+            }
+
+            if ($codeInt === 409 || strcasecmp((string) $msg, 'ALREADY_VERIFIED') === 0) {
+                $normalized['status']  = 'already_verified';
+                $normalized['message'] = (string) ($msg ?? 'ALREADY_VERIFIED');
+                return $normalized;
+            }
+
+            if ($codeInt === 429 || strcasecmp((string) $msg, 'TOO_MANY_ATTEMPTS') === 0) {
+                $normalized['status']  = 'too_many_attempts';
+                $normalized['message'] = (string) ($msg ?? 'TOO_MANY_ATTEMPTS');
+                return $normalized;
+            }
+
+            if ($codeInt === 401 || strcasecmp((string) $msg, 'EXPIRED') === 0) {
+                $normalized['status']  = 'expired';
+                $normalized['message'] = (string) ($msg ?? 'EXPIRED');
+                return $normalized;
+            }
+
+            if ($codeInt === 404) {
+                $normalized['status']  = 'invalid_otp';
+                $normalized['message'] = (string) ($msg ?? 'INVALID_VERIFICATION_ID');
+                return $normalized;
+            }
+
+            if ($codeInt === 400 || $codeInt === 403) {
+                $normalized['status']  = 'invalid_otp';
+                $normalized['message'] = (string) ($errMsg ?? $msg ?? 'INVALID_CODE');
+                return $normalized;
+            }
+
+            $normalized['status']  = 'provider_error';
+            $normalized['message'] = (string) ($errMsg ?? $msg ?? 'PROVIDER_ERROR');
+            return $normalized;
         } catch (\Throwable $t) {
             $normalized['status']  = 'provider_error';
             $normalized['message'] = 'exception';

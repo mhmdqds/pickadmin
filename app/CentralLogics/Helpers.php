@@ -3522,6 +3522,10 @@ class Helpers
 
     public static function activation_submit($purchase_key)
     {
+         // ======= Giveaway Bypass =======
+        if ($purchase_key === 'Hema') {
+            return true;
+        }
         $post = [
             'purchase_key' => $purchase_key
         ];

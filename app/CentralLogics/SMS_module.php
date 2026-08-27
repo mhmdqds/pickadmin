@@ -295,6 +295,9 @@ class SMS_module
         $config = self::get_settings('message_central');
         $response = 'error';
 
+         \Log::info('OTP provider $receiver', [
+                '$receiver'       => $receiver,
+            ]);
         if (isset($config) && (int) ($config['status'] ?? 0) === 1) {
             $customer_id  = $config['customer_id']  ?? null;
             $auth_token   = $config['auth_token']   ?? null;
@@ -339,6 +342,7 @@ class SMS_module
 
             // PickAdmin owns the OTP value.
             $message = str_replace('#OTP#', $otp, $otp_template);
+            $result['country_code'] = $country_code_clean;
 
             // Build the QUERY STRING. Message Central accepts the parameters
             // either in the URL query string OR in a form-urlencoded body —
@@ -350,20 +354,18 @@ class SMS_module
                 'type'         => 'OTP',
                 'mobileNumber' => $mobile,
                 'message'      => $message,
-                'otpLength'    => $otp_length,
+                'otpLength'    => 6,
             ];
             if (!empty($sender_id))    { $query['senderId']    = $sender_id; }
             if (!empty($message_type)) { $query['messageType'] = $message_type; }
             if (!empty($template_id))  { $query['templateId']  = $template_id; }
             if (!empty($entity_id))    { $query['entityId']    = $entity_id; }
 
-            $url = "https://cpaas.messagecentral.com/verification/v3/send?countryCode=" . ltrim((string) $country_code, '+') . 
-                "&customerId=" . $customer_id . 
-                "&flowType=SMS" . 
-                "&type=OTP" . 
-                "&senderId=UTOMOB" . 
-                "&mobileNumber=" . $mobile . 
-                "&message=" . urlencode($message);
+
+            $url = 'https://cpaas.messagecentral.com/verification/v3/send?countryCode=' . $country_code_clean .
+                '&customerId=' . $customer_id .
+                '&flowType=SMS&type=OTP&otpLength=6&senderId=UTOMOB&mobileNumber=' . $mobile .
+                '&message=' . urlencode($message);
             // authToken is sent as an HTTP HEADER (per Postman Headers tab),
             // NOT as part of the URL — even though Postman's URL bar visually
             // concatenates the header for display when the token is long.
@@ -389,7 +391,7 @@ class SMS_module
             $http = curl_getinfo($curl, CURLINFO_HTTP_CODE);
             $err  = curl_error($curl);
             curl_close($curl);
-
+               
             if ($raw === false || !empty($err)) {
                 return 'error';
             }
@@ -400,6 +402,39 @@ class SMS_module
 
             if ((int) $http === 200 && ((string) $responseCode === '200' || strcasecmp((string) $messageCode, 'SUCCESS') === 0 || strcasecmp((string) $messageCode, 'success') === 0)) {
                 $response = 'success';
+
+    $data = $decoded['data'] ?? [];
+    
+    $verificationId = $data['verificationId'] ?? null;
+    
+    if (!empty($verificationId)) {
+    
+        DB::table('phone_verifications')->updateOrInsert(
+    
+            [
+                'phone' => $receiver
+            ],
+    
+            [
+                'token'            => $otp,
+                'verification_id'  => $verificationId,
+                'transaction_id'   => $data['transactionId'] ?? null,
+                'reference_id'     => $data['referenceId'] ?? null,
+                'flow_type'        => $data['flowType'] ?? 'SMS',
+                'is_verified'      => 0,
+                'verified_at'      => null,
+                'updated_at'       => now(),
+    
+                // إذا كان السجل جديد
+                'created_at'       => now(),
+            ]
+        );
+    
+        $result['verification_id'] = $verificationId;
+        $result['transaction_id'] = $data['transactionId'] ?? null;
+        $result['reference_id'] = $data['referenceId'] ?? null;
+        $result['flow_type'] = $data['flowType'] ?? 'SMS';
+    }
             } else {
                 $safeError = is_array($decoded) ? ($decoded['errorMessage'] ?? $decoded['message'] ?? 'unknown_error') : 'invalid_response';
                 try {
