@@ -309,6 +309,16 @@ Route::group(['namespace' => 'Admin', 'as' => 'admin.'], function () {
                         Route::get(WalletBonus::UPDATE_STATUS[URI] . '/{id}/{status}', [WalletBonusController::class, 'updateStatus'])->name('status');
                     });
                 });
+
+                // ============================================================
+                // Account Deletion Requests (GDPR / Google Play)
+                // ============================================================
+                Route::group(['prefix' => 'account-deletion', 'as' => 'account-deletion.'], function () {
+                    Route::get('/',                          [\App\Http\Controllers\Admin\AccountDeletionRequestController::class, 'index'])->name('list');
+                    Route::get('{deletion}',                 [\App\Http\Controllers\Admin\AccountDeletionRequestController::class, 'show'])->name('show');
+                    Route::post('{deletion}/retry',          [\App\Http\Controllers\Admin\AccountDeletionRequestController::class, 'retry'])->name('retry');
+                    Route::post('{deletion}/cancel',         [\App\Http\Controllers\Admin\AccountDeletionRequestController::class, 'cancel'])->name('cancel');
+                });
             });
 
             Route::group(['prefix' => 'cashback', 'as' => 'cashback.', 'middleware' => ['module:cashback']], function () {

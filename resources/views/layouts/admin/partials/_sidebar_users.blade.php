@@ -245,6 +245,17 @@
                     </a>
                 </li>
 
+                @if (\Illuminate\Support\Facades\Route::has('admin.customer.account-deletion.list'))
+                <li class="navbar-vertical-aside-has-menu {{ Request::is('admin/customer/account-deletion*') ? 'active' : '' }}">
+                    <a class="js-navbar-vertical-aside-menu-link nav-link" href="{{ route('admin.customer.account-deletion.list') }}" title="Account Deletion">
+                        <i class="tio-delete nav-icon"></i>
+                        <span class="navbar-vertical-aside-mini-mode-hidden-elements text-truncate">
+                            Account Deletion
+                        </span>
+                    </a>
+                </li>
+                @endif
+
                 <li class="navbar-vertical-aside-has-menu {{ Request::is('admin/users/customer/wallet*') ? 'active' : '' }}">
 
                     <a class="js-navbar-vertical-aside-menu-link nav-link nav-link-toggle" href="javascript:" title="{{ translate('messages.customer_wallet') }}">

@@ -43,6 +43,17 @@ Route::get('cancelation', 'HomeController@cancelation')->name('cancelation');
 Route::get('refund', 'HomeController@refund_policy')->name('refund');
 Route::get('shipping-policy', 'HomeController@shipping_policy')->name('shipping-policy');
 Route::post('newsletter/subscribe', 'NewsletterController@newsLetterSubscribe')->name('newsletter.subscribe');
+
+// ============================================================================
+// Account Deletion — public Web page (Google Play requirement)
+// ============================================================================
+Route::group(['prefix' => 'delete-account', 'as' => 'delete-account.'], function () {
+    Route::get('/',         [\App\Http\Controllers\Web\AccountDeletionController::class, 'showForm'])->name('show');
+    Route::post('start',    [\App\Http\Controllers\Web\AccountDeletionController::class, 'start'])->name('start');
+    Route::post('verify',   [\App\Http\Controllers\Web\AccountDeletionController::class, 'verify'])->name('verify');
+    Route::post('confirm',  [\App\Http\Controllers\Web\AccountDeletionController::class, 'confirm'])->name('confirm');
+    Route::get('done',      [\App\Http\Controllers\Web\AccountDeletionController::class, 'done'])->name('done');
+});
 Route::get('subscription-invoice/{id}', 'HomeController@subscription_invoice')->name('subscription_invoice');
 Route::get('order-invoice/{id}', 'HomeController@order_invoice')->name('order_invoice');
 Route::get('deliveryman-earning-report-invoice/{id}', 'HomeController@earningReportInvoice')->name('delivery_earning_invoice')->middleware('localization');

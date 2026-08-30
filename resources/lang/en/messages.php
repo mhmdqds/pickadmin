@@ -11765,4 +11765,8 @@ Smartly or Earn. ',
   'Verification_session_not_found' => 'Verification session not found, please request a new OTP',
   'The email or phone field is required.' => 'The email or phone field is required.',
   'phone_number_is_already_verified' => 'Phone number is already verified',
+
+  // Account Deletion (Google Play / GDPR compliance)
+  'account_deletion_requests' => 'Account Deletion Requests',
+  'deletion_request_created' => 'Your account deletion request has been created.',
 );

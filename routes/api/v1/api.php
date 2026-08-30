@@ -418,6 +418,16 @@ Route::group(['namespace' => 'Api\V1', 'middleware'=>'localization'], function (
             Route::get('review-reminder', 'CustomerController@review_reminder');
             Route::get('review-reminder-cancel', 'CustomerController@review_reminder_cancel');
 
+            // ============================================================
+            // Account Deletion (Google Play compliance + GDPR / CCPA)
+            // ============================================================
+            Route::group(['prefix' => 'account-deletion'], function () {
+                Route::post('request', 'AccountDeletionController@request');
+                Route::post('verify',  'AccountDeletionController@verify');
+                Route::post('confirm', 'AccountDeletionController@confirm');
+                Route::get('status',   'AccountDeletionController@status');
+            });
+
         });
         Route::group(['prefix' => 'customer', 'middleware' => 'apiGuestCheck'], function () {
             Route::group(['prefix' => 'order'], function () {
