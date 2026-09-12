@@ -264,6 +264,10 @@ Route::group(['namespace' => 'Vendor', 'as' => 'vendor.'], function () {
                 Route::get('store-setup', 'BusinessSettingsController@store_index')->name('store-setup');
                 Route::post('add-schedule', 'BusinessSettingsController@add_schedule')->name('add-schedule');
                 Route::get('remove-schedule/{store_schedule}', 'BusinessSettingsController@remove_schedule')->name('remove-schedule');
+
+                // Delivery Service Hours (independent from Daily time schedule)
+                Route::post('add-delivery-schedule', 'BusinessSettingsController@add_delivery_schedule')->name('add-delivery-schedule');
+                Route::get('remove-delivery-schedule/{delivery_schedule}', 'BusinessSettingsController@remove_delivery_schedule')->name('remove-delivery-schedule');
                 Route::get('update-active-status', 'BusinessSettingsController@active_status')->name('update-active-status');
                 Route::post('update-setup/{store}', 'BusinessSettingsController@store_setup')->name('update-setup');
                 Route::post('update-stock-setup/{store}', 'BusinessSettingsController@stock_setup')->name('update-stock-setup');

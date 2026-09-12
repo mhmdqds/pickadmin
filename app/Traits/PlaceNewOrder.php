@@ -14,6 +14,7 @@ use App\Models\OrderDetail;
 use App\Models\ItemCampaign;
 use Illuminate\Http\Request;
 use App\CentralLogics\Helpers;
+use App\CentralLogics\DeliveryScheduleLogic;
 use App\Models\ParcelCategory;
 use App\Models\BusinessSetting;
 use App\CentralLogics\OrderLogic;
@@ -823,6 +824,16 @@ trait PlaceNewOrder
                 $store->open == false => [
                     'code'    => 'order_time',
                     'message' => translate('messages.store_is_closed_at_order_time'),
+                    'status_code' => 403,
+                ],
+                // Delivery Service Hours — only enforce for delivery
+                // orders. Scheduled orders use the scheduled timestamp,
+                // instant orders use the current time. Takeaway orders
+                // remain unaffected.
+                $request->order_type === 'delivery'
+                    && ! DeliveryScheduleLogic::isDeliveryAvailableAt($store, $schedule_at) => [
+                    'code'        => 'delivery_unavailable',
+                    'message'     => translate('messages.delivery_service_unavailable'),
                     'status_code' => 403,
                 ],
                 $store->store_business_model == 'unsubscribed' => [

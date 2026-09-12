@@ -427,6 +427,16 @@ class Store extends Model
         return $this->hasMany(StoreSchedule::class)->orderBy('opening_time');
     }
 
+    /**
+     * Independent Delivery Service Hours windows. Mirrors `schedules()`
+     * (Daily time schedule) but is owned by `delivery_schedule` so the
+     * two feature surfaces never interfere.
+     */
+    public function deliverySchedules(): HasMany
+    {
+        return $this->hasMany(DeliverySchedule::class)->orderBy('day')->orderBy('opening_time');
+    }
+
     public function deliverymen(): HasMany
     {
         return $this->hasMany(DeliveryMan::class);

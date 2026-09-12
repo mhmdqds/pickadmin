@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\CentralLogics\Helpers;
 use App\CentralLogics\StoreLogic;
+use App\CentralLogics\DeliveryScheduleLogic;
 use App\Exports\DisbursementHistoryExport;
 use App\Exports\StoreCashTransactionExport;
 use App\Exports\StoreListExport;
@@ -27,6 +28,7 @@ use App\Models\OrderTransaction;
 use App\Models\Store;
 use App\Models\StoreConfig;
 use App\Models\StoreSchedule;
+use App\Models\DeliverySchedule;
 use App\Models\StoreWallet;
 use App\Models\SubscriptionPackage;
 use App\Models\TempProduct;
@@ -1943,6 +1945,106 @@ class VendorController extends Controller
 
         return response()->json([
             'view' => view('admin-views.vendor.view.partials._schedule', compact('store'))->render(),
+        ]);
+    }
+
+    /**
+     * Admin-side handler for Delivery Service Hours windows. Mirrors
+     * `add_schedule()` but writes to the independent
+     * `delivery_schedule` table and scopes every query by
+     * `store_id` from the form (NOT from any client-provided
+     * ownership token — admin is allowed to edit any store).
+     */
+    public function add_delivery_schedule(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'store_id'   => 'required|integer|exists:stores,id',
+            'day'        => 'required|integer|min:0|max:6',
+            'start_time' => 'required_without:is_active|date_format:H:i',
+            'end_time'   => 'required_without:is_active|date_format:H:i|after:start_time',
+            'is_active'  => 'sometimes|boolean',
+        ], [
+            'end_time.after' => translate('messages.End time must be after the start time'),
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => Helpers::error_processor($validator)]);
+        }
+
+        $isActive = $request->boolean('is_active');
+        $start = $request->start_time ? $request->start_time . ':00' : null;
+        $end   = $request->end_time   ? $request->end_time   . ':00' : null;
+
+        $errorCode = DeliveryScheduleLogic::validateWindow($start, $end, $isActive);
+        if ($errorCode) {
+            return response()->json(['errors' => [[
+                'code'    => $errorCode,
+                'message' => translate('messages.delivery_service_hours_invalid'),
+            ]]]);
+        }
+
+        if ($isActive && $start && $end) {
+            $overlap = DeliverySchedule::where('day', $request->day)
+                ->where('store_id', $request->store_id)
+                ->where('is_active', 1)
+                ->where(function ($q) use ($start, $end) {
+                    $q->where(function ($query) use ($start) {
+                        $query->where('opening_time', '<=', $start)
+                              ->where('closing_time', '>=', $start);
+                    })->orWhere(function ($query) use ($end) {
+                        $query->where('opening_time', '<=', $end)
+                              ->where('closing_time', '>=', $end);
+                    });
+                })
+                ->first();
+
+            if ($overlap) {
+                return response()->json(['errors' => [[
+                    'code'    => 'time',
+                    'message' => translate('messages.schedule_overlapping_warning'),
+                ]]]);
+            }
+        }
+
+        DeliverySchedule::updateOrCreate(
+            [
+                'store_id' => $request->store_id,
+                'day'      => $request->day,
+            ],
+            [
+                'opening_time' => $start,
+                'closing_time' => $end,
+                'is_active'    => $isActive,
+            ]
+        );
+
+        DeliveryScheduleLogic::invalidateCache((int) $request->store_id);
+
+        $store = Store::find($request->store_id);
+        return response()->json([
+            'view' => view('admin-views.vendor.view.partials._delivery_schedule', compact('store'))->render(),
+        ]);
+    }
+
+    /**
+     * Admin-side handler for removing a Delivery Service Hours row.
+     * The URL parameter is the `delivery_schedule.id` row id.
+     */
+    public function remove_delivery_schedule($delivery_schedule)
+    {
+        $row = DeliverySchedule::find($delivery_schedule);
+        if (! $row) {
+            return response()->json([], 404);
+        }
+
+        $store = $row->store;
+        $storeId = $row->store_id;
+        $row->delete();
+
+        DeliveryScheduleLogic::invalidateCache($storeId);
+
+        return response()->json([
+            'view' => view('admin-views.vendor.view.partials._delivery_schedule', compact('store'))->render(),
         ]);
     }
 

@@ -363,6 +363,19 @@
                     @include('admin-views.vendor.view.partials._schedule', $store)
                 </div>
             </div>
+
+            {{-- Delivery Service Hours: independent from Daily time schedule. --}}
+            <div class="card mt-3">
+                <div class="card-header justify-content-between">
+                    <h5 class="card-title">
+                        <span class="card-header-icon"><i class="tio-delivery-fast"></i></span>
+                        <span class="p-md-1">{{translate('messages.delivery_service_hours')}}</span>
+                    </h5>
+                </div>
+                <div class="card-body" id="delivery-schedule">
+                    @include('admin-views.vendor.view.partials._delivery_schedule', $store)
+                </div>
+            </div>
             @endif
         </div>
     </div>
@@ -391,6 +404,51 @@
                     <div class="form-group">
                         <label for="message-text" class="col-form-label">{{translate('messages.End time')}}:</label>
                         <input type="time" class="form-control" name="end_time" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">{{translate('messages.Submit')}}</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Delivery Service Hours modal -->
+<div class="modal fade" id="exampleModalDelivery" tabindex="-1" role="dialog"
+     aria-labelledby="exampleModalDeliveryLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="exampleModalDeliveryLabel">
+                    {{translate('messages.create_delivery_schedule_for')}}
+                </h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form action="javascript:" method="post" id="add-delivery-schedule">
+                    @csrf
+                    <input type="hidden" name="day" id="delivery_day_id_input">
+                    <input type="hidden" name="store_id" value="{{$store->id}}">
+                    <div class="form-group">
+                        <label class="col-form-label">{{translate('messages.Start time')}}:</label>
+                        <input type="time" class="form-control" name="start_time">
+                    </div>
+                    <div class="form-group">
+                        <label class="col-form-label">{{translate('messages.End time')}}:</label>
+                        <input type="time" class="form-control" name="end_time">
+                    </div>
+                    <div class="form-group">
+                        <label class="toggle-switch toggle-switch-sm d-flex justify-content-between border rounded px-3 form-control"
+                               for="delivery_is_active_admin">
+                            <span class="pr-2">{{ translate('messages.delivery_active') }}</span>
+                            <input type="checkbox" class="toggle-switch-input"
+                                   id="delivery_is_active_admin"
+                                   name="is_active" value="1" checked>
+                            <span class="toggle-switch-label">
+                                <span class="toggle-switch-indicator"></span>
+                            </span>
+                        </label>
                     </div>
                     <button type="submit" class="btn btn-primary">{{translate('messages.Submit')}}</button>
                 </form>
@@ -545,6 +603,98 @@
                     }
                 },
                 error: function(XMLHttpRequest, textStatus, errorThrown) {
+                    toastr.error(XMLHttpRequest.responseText, {
+                        CloseButton: true,
+                        ProgressBar: true
+                    });
+                },
+                complete: function () {
+                    $('#loading').hide();
+                },
+            });
+        });
+
+        // Delivery Service Hours — independent handler.
+        $(document).on('click', '.delete-delivery-schedule', function () {
+            let route = $(this).data('url');
+            Swal.fire({
+                title: '<?php echo e(translate('Want_to_delete_this_schedule?')); ?>',
+                text: '<?php echo e(translate('If_you_select_Yes,_the_time_schedule_will_be_deleted')); ?>',
+                type: 'warning',
+                showCancelButton: true,
+                cancelButtonColor: 'default',
+                confirmButtonColor: '#00868F',
+                cancelButtonText: '<?php echo e(translate('messages.no')); ?>',
+                confirmButtonText: '<?php echo e(translate('messages.yes')); ?>',
+                reverseButtons: true
+            }).then((result) => {
+                if (result.value) {
+                    $.get(route, function (data) {
+                        if (data && data.view) {
+                            $('#delivery-schedule').empty().html(data.view);
+                            toastr.success('<?php echo e(translate('messages.Schedule removed successfully')); ?>', {
+                                CloseButton: true,
+                                ProgressBar: true
+                            });
+                        } else {
+                            toastr.error('<?php echo e(translate('messages.Schedule not found')); ?>', {
+                                CloseButton: true,
+                                ProgressBar: true
+                            });
+                        }
+                    });
+                }
+            });
+        });
+
+        $('#exampleModalDelivery').on('show.bs.modal', function (event) {
+            let button = $(event.relatedTarget);
+            let day_name = button.data('day');
+            let day_id = button.data('dayid');
+            let modal = $(this);
+            modal.find('.modal-title').text('<?php echo e(translate('messages.create_delivery_schedule_for')); ?> ' + day_name);
+            modal.find('.modal-body input[name=day]').val(day_id);
+            modal.find('form').trigger('reset');
+            $('#delivery_is_active_admin').prop('checked', true);
+        });
+
+        $('#add-delivery-schedule').on('submit', function (e) {
+            e.preventDefault();
+            let formData = new FormData(this);
+            $.ajaxSetup({
+                headers: {
+                    'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+                }
+            });
+            $.post({
+                url: '{{ route('admin.store.add-delivery-schedule') }}',
+                data: formData,
+                cache: false,
+                contentType: false,
+                processData: false,
+                beforeSend: function () {
+                    $('#loading').show();
+                },
+                success: function (data) {
+                    if (data && data.view) {
+                        $('#delivery-schedule').empty().html(data.view);
+                        $('#exampleModalDelivery').modal('hide');
+                        toastr.success('{{translate('messages.Schedule added successfully')}}', {
+                            CloseButton: true,
+                            ProgressBar: true
+                        });
+                    } else if (data && data.errors) {
+                        let msgs = [];
+                        $.each(data.errors, function(_, e) {
+                            msgs.push(e.message);
+                        });
+                        toastr.error(msgs.join('<br>'), {
+                            CloseButton: true,
+                            ProgressBar: true
+                        });
+                    }
+                },
+                error: function(XMLHttpRequest) {
                     toastr.error(XMLHttpRequest.responseText, {
                         CloseButton: true,
                         ProgressBar: true

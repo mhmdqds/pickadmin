@@ -7,7 +7,9 @@ use App\Models\StoreConfig;
 use App\Models\Translation;
 use Illuminate\Http\Request;
 use App\Models\StoreSchedule;
+use App\Models\DeliverySchedule;
 use App\CentralLogics\Helpers;
+use App\CentralLogics\DeliveryScheduleLogic;
 use App\Models\BusinessSetting;
 use App\Http\Controllers\Controller;
 use Brian2694\Toastr\Facades\Toastr;
@@ -237,6 +239,106 @@ class BusinessSettingsController extends Controller
         $schedule->delete();
         return response()->json([
             'view' => view('vendor-views.business-settings.partials._schedule', compact('store'))->render(),
+        ]);
+    }
+
+    /**
+     * Add (or upsert) a Delivery Service Hours window for the
+     * current vendor's store. Mirrors `add_schedule()` but writes
+     * to `delivery_schedule` instead of `store_schedule`.
+     */
+    public function add_delivery_schedule(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'day'        => 'required|integer|min:0|max:6',
+            'start_time' => 'required_without:is_active|date_format:H:i',
+            'end_time'   => 'required_without:is_active|date_format:H:i|after:start_time',
+            'is_active'  => 'sometimes|boolean',
+        ], [
+            'end_time.after' => translate('messages.End time must be after the start time'),
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => Helpers::error_processor($validator)]);
+        }
+
+        $isActive = $request->boolean('is_active');
+        $start = $request->start_time ? $start = $request->start_time . ':00' : null;
+        $end   = $request->end_time   ? $end   = $request->end_time   . ':00' : null;
+
+        $errorCode = DeliveryScheduleLogic::validateWindow($start, $end, $isActive);
+        if ($errorCode) {
+            return response()->json(['errors' => [[
+                'code'    => $errorCode,
+                'message' => translate('messages.delivery_service_hours_invalid'),
+            ]]]);
+        }
+
+        // Guard against overlapping windows on the same day.
+        if ($isActive && $start && $end) {
+            $overlap = DeliverySchedule::where('day', $request->day)
+                ->where('store_id', Helpers::get_store_id())
+                ->where('is_active', 1)
+                ->where(function ($q) use ($start, $end) {
+                    $q->where(function ($query) use ($start) {
+                        $query->where('opening_time', '<=', $start)
+                              ->where('closing_time', '>=', $start);
+                    })->orWhere(function ($query) use ($end) {
+                        $query->where('opening_time', '<=', $end)
+                              ->where('closing_time', '>=', $end);
+                    });
+                })
+                ->first();
+
+            if ($overlap) {
+                return response()->json(['errors' => [[
+                    'code'    => 'time',
+                    'message' => translate('messages.schedule_overlapping_warning'),
+                ]]]);
+            }
+        }
+
+        DeliverySchedule::updateOrCreate(
+            [
+                'store_id' => Helpers::get_store_id(),
+                'day'      => $request->day,
+            ],
+            [
+                'opening_time' => $start,
+                'closing_time' => $end,
+                'is_active'    => $isActive,
+            ]
+        );
+
+        DeliveryScheduleLogic::invalidateCache(Helpers::get_store_id());
+
+        $store = Helpers::get_store_data();
+        return response()->json([
+            'view' => view('vendor-views.business-settings.partials._delivery_schedule', compact('store'))->render(),
+        ]);
+    }
+
+    /**
+     * Remove (or disable) a single Delivery Service Hours window.
+     * Removing means deleting the row entirely so the default
+     * fallback applies again.
+     */
+    public function remove_delivery_schedule($delivery_schedule)
+    {
+        $store = Helpers::get_store_data();
+        $row = DeliverySchedule::where('store_id', $store->id)
+            ->where('id', $delivery_schedule)
+            ->first();
+
+        if (!$row) {
+            return response()->json([], 404);
+        }
+
+        $row->delete();
+        DeliveryScheduleLogic::invalidateCache($store->id);
+
+        return response()->json([
+            'view' => view('vendor-views.business-settings.partials._delivery_schedule', compact('store'))->render(),
         ]);
     }
 

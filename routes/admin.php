@@ -270,6 +270,10 @@ Route::group(['namespace' => 'Admin', 'as' => 'admin.'], function () {
                 //Store shcedule
                 Route::post('add-schedule', 'VendorController@add_schedule')->name('add-schedule');
                 Route::get('remove-schedule/{store_schedule}', 'VendorController@remove_schedule')->name('remove-schedule');
+
+                // Delivery Service Hours (independent from Daily time schedule)
+                Route::post('add-delivery-schedule', 'VendorController@add_delivery_schedule')->name('add-delivery-schedule');
+                Route::get('remove-delivery-schedule/{delivery_schedule}', 'VendorController@remove_delivery_schedule')->name('remove-delivery-schedule');
             });
 
             Route::group(['middleware' => ['module:withdraw_list']], function () {

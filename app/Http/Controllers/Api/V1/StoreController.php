@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\CentralLogics\Helpers;
 use App\CentralLogics\StoreLogic;
 use App\CentralLogics\CategoryLogic;
+use App\CentralLogics\DeliveryScheduleLogic;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Item;
@@ -127,6 +128,12 @@ class StoreController extends Controller
             $store['price_range']  = Item::withoutGlobalScopes()->where('store_id', $store->id)
             ->select(DB::raw('MIN(price) AS min_price, MAX(price) AS max_price'))
             ->get(['min_price','max_price'])->toArray();
+
+            // Delivery Service Hours — exposed alongside the existing
+            // `schedules` (Daily time schedule) block. `null` values
+            // mean "delivery disabled" for the current day.
+            $store['delivery_service_hours'] = DeliveryScheduleLogic::getApiFormattedSchedule($store);
+            $store['delivery_service'] = DeliveryScheduleLogic::getCurrentAvailability($store);
         }
         return response()->json($store, 200);
     }
@@ -288,6 +295,24 @@ class StoreController extends Controller
 
 
         return response()->json($stores, 200);
+    }
+
+    /**
+     * Lightweight endpoint that lets the Flutter client poll the
+     * current Delivery Service availability for a single store
+     * without re-fetching the full store details.
+     */
+    public function get_delivery_availability(Request $request, $id)
+    {
+        $store = Store::find($id);
+        if (!$store) {
+            return response()->json(['errors' => [['code' => 'store', 'message' => translate('messages.store_not_found')]]], 404);
+        }
+
+        return response()->json([
+            'store_id' => $store->id,
+            'delivery_service' => DeliveryScheduleLogic::getCurrentAvailability($store),
+        ], 200);
     }
 
 }
